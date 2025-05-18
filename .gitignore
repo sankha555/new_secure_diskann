@@ -1,0 +1,20 @@
+.vscode/
+*build/
+*data/
+results/
+*tmp/
+*.out
+*__pycache__/
+*.index
+src/diskann/build/data
+*.txt
+Makefile
+*.a
+*.cmake 
+*.log
+# Ignore all files that do not contain a dot (no extension)
+# *
+# !*/    # Don't ignore directories
+# !*.*   # Don't ignore files with a dot (i.e., files with an extension)
+*.zip
+CMakeFiles/
