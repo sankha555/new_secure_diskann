@@ -8,7 +8,7 @@
       "evict_rate": 36, 
       "num_levels": 16,
       "oram_cached_levels": 4, 
-      "block_size": 516,
+      "block_size": 258,
       "use_oram": true,
 
       "buckets_path": "oram_data/buckets.bin",
