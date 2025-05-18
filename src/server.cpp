@@ -44,7 +44,7 @@ void setup_connection(int port, string address, NetIO*& io, NetIO*& bf_io) {
         exit(EXIT_FAILURE);
     }
 
-    cout << "\nNetwork connection established with client at 127.0.0.1" << endl;
+    cout << "\nNetwork connection established with client at " << address << endl;
 }
 
 int main(int argc, char** argv) {
