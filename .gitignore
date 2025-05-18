@@ -18,3 +18,4 @@ Makefile
 # !*.*   # Don't ignore files with a dot (i.e., files with an extension)
 *.zip
 CMakeFiles/
+!*CMakeLists.txt
