@@ -85,7 +85,7 @@ void print_communication_metrics(NetIO* io, long c2s_comm, long c2s_round, int o
     eviction_rounds = (eviction_rounds/3)*2;
     c2s_round = oram_rounds + reshuffle_rounds + eviction_rounds;
 
-    std::cout << "Total rounds: " << c2s_round << " rounds" << std::endl;
+    std::cout << "\nTotal rounds: " << c2s_round << " rounds" << std::endl;
     std::cout << "---> Oram Access: " << oram_rounds << " rounds" << std::endl;
     std::cout << "---> Reshuffling: " << (reshuffle_rounds) << " rounds" << std::endl;
     std::cout << "---> Eviction: " << (eviction_rounds) << " rounds" << std::endl;
@@ -107,16 +107,16 @@ void print_search_results(vector<double> data, bool only_headers){
             { name { "Time (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
             { name { "Comm. (MB) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
             { name { "Rounds | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
-            { name { "Mean Latency (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
+            { name { "Latency (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
         },
 
         {std::cout}
     };
 
     if (only_headers) {
-        cout << "=================================================================================================================================================================" << endl;
+        cout << "===================================================================================================================================================================================" << endl;
         p.sanity_check().print_headers();
-        cout << "=================================================================================================================================================================" << endl;
+        cout << "===================================================================================================================================================================================" << endl;
     }
 
     auto to_string_custom =  [](double value, int precision) {
