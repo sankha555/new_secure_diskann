@@ -30,7 +30,7 @@
 #include "OramRing.h"
 #include "OramReadPathEviction.h"
 #include "OramInterface.h"
-
+#include "RemoteRing.h"
 
 using namespace std;
 
@@ -192,7 +192,7 @@ class OramAPI {
     int oram_calls = 0;
 
     OramAPI(
-        UntrustedStorageInterface* rss,
+        RemoteRing* rss,
         RandForOramInterface* random,
         int total_blocks,
         int num_levels,
@@ -204,18 +204,17 @@ class OramAPI {
         string block_mapping_file,
         string metadata_path,
         string pos_map_path,
-        bool debug
+        bool debug,
+        RingOramConfig config
     ){
         oram = new OramRing(
             rss, 
             random, 
-            block_size,
-            real_bucket_size,
-            dummy_size,
-            evict_rate,
-            total_blocks,
+            config,
             num_levels,
-            oram_cached_levels
+            oram_cached_levels,
+            true,
+            true
         );
 
         this->debug = debug;

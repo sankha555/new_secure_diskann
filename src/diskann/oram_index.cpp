@@ -1736,17 +1736,19 @@ template <typename T, typename LabelT>
 void OramIndex<T, LabelT>::oram_read(
     vector<std::pair<uint32_t, char *>> frontier_nhoods,
     OramAPI* oram,
-    int beam_width
+    int beam_width,
+    QueryStats* stats
 ){
     vector<node_id_t> node_ids;
     for (auto &node : frontier_nhoods) {
         node_ids.push_back((node_id_t)node.first);
     }
     
-    // cout << node_ids.size() << "\n";
-    // int num_rounds = ((RemoteServerStorage*) oram->oram->storage)->io->num_rounds;
+    auto s = std::chrono::high_resolution_clock::now();    
     vector<DiskANNNode<T, LabelT>*> fetched_nodes = oram->oram_access<T, LabelT>(node_ids, beam_width);
-    // cout << ((RemoteServerStorage*) oram->oram->storage)->io->num_rounds - num_rounds << " ";
+    auto e = std::chrono::high_resolution_clock::now();    
+
+    stats->communication_time += (e - s);
 
     map<node_id_t, DiskANNNode<T, LabelT>*> node_map;
     for (auto &node : fetched_nodes) {
@@ -1778,6 +1780,8 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
                                                  const uint32_t io_limit, const bool use_reorder_data,
                                                  QueryStats *stats, OramAPI* oram)
 {
+    Timer query_timer, io_timer, cpu_timer;
+
     uint64_t num_sector_per_nodes = DIV_ROUND_UP(_max_node_len, defaults::SECTOR_LEN);
     if (beam_width > num_sector_per_nodes * defaults::MAX_N_SECTOR_READS)
         throw ANNException("Beamwidth can not be higher than defaults::MAX_N_SECTOR_READS", -1, __FUNCSIG__, __FILE__,
@@ -1856,7 +1860,6 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
         diskann::aggregate_coords(ids, n_ids, this->data, this->_n_chunks, pq_coord_scratch);
         diskann::pq_dist_lookup(pq_coord_scratch, n_ids, this->_n_chunks, pq_dists, dists_out);
     };
-    Timer query_timer, io_timer, cpu_timer;
 
     tsl::robin_set<uint64_t> &visited = query_scratch->visited;
     NeighborPriorityQueue &retset = query_scratch->retset;
@@ -1995,7 +1998,7 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
             // struct rusage usage_later;
             // getrusage(RUSAGE_SELF, &usage);
 
-            oram_read(frontier_nhoods, oram, beam_width);
+            oram_read(frontier_nhoods, oram, beam_width, stats);
 
             // getrusage(RUSAGE_SELF, &usage_later);
             // cout << usage_later.ru_maxrss - usage.ru_maxrss << " KB\n";
@@ -2005,7 +2008,7 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
             }
         } else {
             // even if frontier is empty, I need to make an oram access for security
-            oram_read(frontier_nhoods, oram, beam_width);
+            oram_read(frontier_nhoods, oram, beam_width, stats);
         }
 
         if(stats != nullptr){

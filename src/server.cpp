@@ -72,7 +72,8 @@ int main(int argc, char** argv) {
         md.dummy_size, 
         md.evict_rate, 
         md.base_size,
-        md.num_levels
+        md.num_levels,
+        md.oram_cached_levels
     );
 
     DiskANNNode<float, node_id_t>::n_neighbors = md.M;
@@ -93,9 +94,9 @@ int main(int argc, char** argv) {
     }
 
     bool in_memory = true;
-    RemoteServerRing server = RemoteServerRing(io, config.num_buckets, config.bucket_size, in_memory, md.integrity);
+    RemoteRing server = RemoteRing(io, config, true, in_memory, md.integrity);
     try {
-        server.load(md.buckets_path.c_str());
+        server.load_server_state(md.buckets_path.c_str());
     } catch (const std::exception& e) {
         cerr << "Error: Failed to load server buckets. Exception: " << e.what() << endl;
         delete random;
@@ -121,11 +122,11 @@ int main(int argc, char** argv) {
     tprint("Starting remote server... \n", t0);
 
     long comm = io->counter, round = io->num_rounds;
-    server.bookmark_comm = comm;
-    server.bookmark_rounds = round;
 
     try {
-        server.RunServer();
+        server.start_comm = comm;
+        server.start_rounds = round;
+        server.run_server();
     } catch (const std::exception& e) {
         cerr << "Error: Exception occurred while running the server. Exception: " << e.what() << endl;
     }

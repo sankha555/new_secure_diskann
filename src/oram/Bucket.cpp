@@ -156,7 +156,6 @@ SBucket::SBucket(bool integrity){
 }
 
 SBucket::~SBucket(){
-    cout << "i am stupid" << endl;
     delete[] data;
     if(hash){
         delete[] hash;

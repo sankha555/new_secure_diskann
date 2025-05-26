@@ -15,6 +15,7 @@
 #include "net_io_channel.h"
 
 #include "tableprinter.h"
+#include "RemoteRing.h"
 
 float* fvecs_read(const char* fname, size_t* d_out, size_t* n_out) {
     FILE* f = fopen(fname, "r");
@@ -70,7 +71,7 @@ void ivecs_write(const char* fname, int* data, size_t d, size_t n) {
     fvecs_write(fname, (float*)data, d, n);
 }
 
-void print_communication_metrics(NetIO* io, long c2s_comm, long c2s_round, int oram_rounds, int reshuffle_rounds, int eviction_rounds) {
+void print_communication_metrics(NetIO* io, long c2s_comm, long c2s_round, RemoteRing* rss, int oram_rounds, int reshuffle_rounds, int eviction_rounds) {
     long s2c_comm, s2c_round;
     io->recv_data(&s2c_comm, sizeof(long));
     io->recv_data(&s2c_round, sizeof(long));
@@ -79,10 +80,13 @@ void print_communication_metrics(NetIO* io, long c2s_comm, long c2s_round, int o
     std::cout << "Total communication: " << (c2s_comm + s2c_comm)*1.0/(1024*1024) << " MB" << std::endl;
     std::cout << "---> Client-to-Server: " << c2s_comm*1.0/(1024*1024) << " MB" << std::endl;
     std::cout << "---> Server-to-Client: " << s2c_comm*1.0/(1024*1024) << " MB" << std::endl;
+    std::cout << "---> Oram Access: " << (rss->comm_for_oram_access + rss->server_comm_for_oram_access)*1.0/(1024*1024) << " MB" << std::endl;
+    std::cout << "---> Reshuffling: " << (rss->comm_for_reshuffles + rss->server_comm_for_reshuffles)*1.0/(1024*1024) << " MB" << std::endl;
+    std::cout << "---> Evictions: " << (rss->comm_for_evictions + rss->server_comm_for_evictions)*1.0/(1024*1024) << " MB" << std::endl;
 
-    oram_rounds = oram_rounds/2;
-    reshuffle_rounds = (reshuffle_rounds/3)*2;
-    eviction_rounds = (eviction_rounds/3)*2;
+    // oram_rounds = oram_rounds/2;
+    // reshuffle_rounds = (reshuffle_rounds/3)*2;
+    // eviction_rounds = (eviction_rounds/3)*2;
     c2s_round = oram_rounds + reshuffle_rounds + eviction_rounds;
 
     std::cout << "\nTotal rounds: " << c2s_round << " rounds" << std::endl;
@@ -104,10 +108,11 @@ void print_search_results(vector<double> data, bool only_headers){
             { name { "MRR@10 | " }   , width { 16 } , tableprinter::fixed { } , tableprinter::precision { 2 } } ,
             { name { "Iterations | "} , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } } ,
             { name { "Hops | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } } ,
-            { name { "Time (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
             { name { "Comm. (MB) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
             { name { "Rounds | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
-            { name { "Latency (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
+            { name { "E2E Time (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
+            { name { "User Time (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
+            { name { "Comm. Time (s) | " } , width {16} , tableprinter::fixed { } , tableprinter::precision { 2 } },
         },
 
         {std::cout}
@@ -133,7 +138,7 @@ void print_search_results(vector<double> data, bool only_headers){
             str_data[i] = to_string_custom(data[i], 2) + " | ";
         }
 
-        p.print(str_data[0], str_data[1], str_data[2], str_data[3], str_data[4], str_data[5], str_data[6], str_data[7], str_data[8], str_data[9], str_data[10]);
+        p.print(str_data[0], str_data[1], str_data[2], str_data[3], str_data[4], str_data[5], str_data[6], str_data[7], str_data[8], str_data[9], str_data[10], str_data[11]);
     }    
 
     cout << endl;

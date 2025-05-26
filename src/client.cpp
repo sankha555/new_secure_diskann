@@ -84,7 +84,8 @@ int main(int argc, char **argv) {
         md.dummy_size, 
         md.evict_rate, 
         md.base_size,
-        md.num_levels
+        md.num_levels,
+        md.oram_cached_levels
     );
 
     DiskANNNode<float, node_id_t>::n_neighbors = md.M;
@@ -96,14 +97,14 @@ int main(int argc, char **argv) {
     NetIO* bf_io = nullptr;
     setup_connection(port, address, io, bf_io);
 
-    RemoteServerStorage* rss = new RemoteServerStorage(config.block_size, io, false, config.num_levels, md.integrity);
+    RemoteRing* rss = new RemoteRing(io, config, false, true, md.integrity);
     if (!rss) {
         cerr << "Error: Failed to initialize RemoteServerStorage." << endl;
         delete io;
         delete bf_io;
         return EXIT_FAILURE;
     }
-    rss->setCapacity(config.num_buckets, md.integrity);
+    // rss->setCapacity(config.num_buckets, md.integrity);
 
     RandForOramInterface* random = new RandomForOram();
     if (!random) {
@@ -127,7 +128,8 @@ int main(int argc, char **argv) {
         md.block_map_path,
         md.metadata_path,
         md.pos_map_path,
-        md.debug
+        md.debug,
+        config
     );
 
     if (!oram_api) {
@@ -151,9 +153,9 @@ int main(int argc, char **argv) {
     comm = io->counter - comm;
     rounds = io->num_rounds - rounds;
 
-    rss->CloseServer();
+    rss->close_server();
 
-    print_communication_metrics(io, comm, rounds, ((OramRing*) oram_api->oram)->rounds_for_oram_access,((OramRing*) oram_api->oram)->rounds_for_early_reshuffle, ((OramRing*) oram_api->oram)->rounds_for_eviction);
+    print_communication_metrics(io, comm, rounds, rss, rss->rounds_for_oram_access,rss->rounds_for_reshuffles, rss->rounds_for_evictions);
 
     delete oram_api;
     delete random;

@@ -5,25 +5,24 @@ find_package(OpenMP REQUIRED)
 # set(LIBURING_INCLUDE_DIR /usr/include/liburing)
 # set(LIBURING_LIBRARY_DIR /usr/lib)
 
-include_directories(${LIBURING_INCLUDE_DIR})
+# include_directories(${LIBURING_INCLUDE_DIR})
 
 set(ORAM_SRC
     Block.cpp
     Bucket.cpp
     csprng.cpp
     FileReader.cpp
-    OramDeterministic.cpp
-    OramReadPathEviction.cpp 
     OramRing.cpp 
+    OramLeak.cpp 
+    OramReadPathEviction.cpp 
     RandomForOram.cpp 
-    ServerStorage.cpp 
     RemoteServerStorage.cpp 
-#    RemoteServer.cpp 
-    RemoteServerRing.cpp 
-#    utils_uring.cpp
+#     RemoteServerRing.cpp 
+    RemoteRing.cpp 
+    RemotePath.cpp 
+    RemoteLeak.cpp 
+    # utils_uring.cpp
 )
-
-# add_subdirectory(oram_building)
 
 add_library(oram_library ${ORAM_SRC})
 target_include_directories(oram_library PUBLIC duthomhas/)

@@ -24,7 +24,8 @@ int OramMetaData::GetBlockOffset(int block_id, bool& real){
     bool dummy_found = false;
     int dummy_ret = -1;
 
-    // TODO: Should randomly sample from a dummy instead of linear traversal
+    // This implementation is insecure
+    // Should randomly sample from a dummy instead of linear traversal
 
     for(int i = 0; i < block_ids.size(); i++){
         if(block_id == block_ids[i] && valids[i] == 1){
@@ -36,6 +37,7 @@ int OramMetaData::GetBlockOffset(int block_id, bool& real){
         if(!dummy_found){
             if(block_ids[i] == -1 && valids[i] == 1){
                 dummy_ret = i;
+                // TODO: insecure workaround, always use first dummy
                 dummy_found = true;
             }
         }
@@ -47,6 +49,40 @@ int OramMetaData::GetBlockOffset(int block_id, bool& real){
     // }
     // cout << endl;
     valids[dummy_ret] = 0;
+    return dummy_ret;
+}
+
+int OramMetaData::GetBlockOffsetLeak(int block_id, bool& real){
+    int ret = -1;
+
+    bool dummy_found = false;
+    int dummy_ret = -1;
+
+    // This implementation is insecure
+    // Should randomly sample from a dummy instead of linear traversal
+
+    for(int i = 0; i < block_ids.size(); i++){
+        if(block_id == block_ids[i] && valids[i] == 1){
+            ret = i;
+            real = true;
+            // valids[i] = 0;
+            return ret;
+        }
+        if(!dummy_found){
+            if(block_ids[i] == -1 && valids[i] == 1){
+                dummy_ret = i;
+                // TODO: insecure workaround, always use first dummy
+                dummy_found = true;
+            }
+        }
+    }
+
+    // cout << "GetBlockOffset for "<< block_id << " : ";
+    // for(auto id : block_ids){
+    //     cout << id << " ";
+    // }
+    // cout << endl;
+    // valids[dummy_ret] = 0;
     return dummy_ret;
 }
 
@@ -75,23 +111,22 @@ void OramMetaData::print_stat(){
 // }
 
 
-OramRing::OramRing(UntrustedStorageInterface* storage, RandForOramInterface* rand_gen,
-                                           int block_size, int real_bucket_size, int dummy_size, int evict_rate, int num_blocks, int num_levels, int cached_levels) {
+OramRing::OramRing(RemoteRing* storage, RandForOramInterface* rand_gen, RingOramConfig config, int num_levels, int cached_levels, bool batch, bool lazy) {
     this->storage = storage;
     this->rand_gen = rand_gen;
-    this->block_size = block_size;
-    this->real_bucket_size = real_bucket_size;
-    this->dummy_size = dummy_size;
-    this->bucket_size = real_bucket_size + dummy_size;
-    this->evict_rate = evict_rate;
+    this->block_size = config.block_size;
+    this->real_bucket_size = config.real_bucket_size;
+    this->dummy_size = config.dummy_size;
+    this->bucket_size = config.real_bucket_size + config.dummy_size;
+    this->evict_rate = config.evict_rate;
+    this->num_blocks = config.num_blocks;
 
-    this->num_blocks = num_blocks;
+    this->batching = batch;
+    this->lazy_eveiction = lazy;
 
     // this->num_levels = ceil(log10(2 * num_blocks / evict_rate) / log10(2)) - 1;
     this->num_levels = num_levels;
     this->num_buckets = pow(2, num_levels)-1;
-
-    this->num_reshuffles = 0;
 
     this->G = 1;
     
@@ -102,7 +137,7 @@ OramRing::OramRing(UntrustedStorageInterface* storage, RandForOramInterface* ran
     this->num_leaves = pow(2, num_levels-1);
     this->rand_gen->setBound(num_leaves);
     // cout << "Set capacity" << endl; 
-    this->storage->setCapacity(num_buckets);
+    // this->storage->setCapacity(num_buckets);
     // cout << "Set capacity done" << endl; 
     this->position_map = vector<int>(num_blocks);
     this->metadata = vector<OramMetaData>(num_buckets);
@@ -120,7 +155,6 @@ OramRing::OramRing(UntrustedStorageInterface* storage, RandForOramInterface* ran
 
     if(cache_top){
         num_cached_bucket = pow(2, num_cached_levels)-1;
-        // cached_oram.resize(num_cached_bucket * real_bucket_size);
     }
 
     cnt_early_reshuffle = 0;
@@ -134,6 +168,7 @@ void OramRing::init_cache_top(){
     vector<int> offsets;
     vector<bool> valids;
     vector<int> num_non_dummies;
+    int total_non_dummies;
     for(int pos = 0; pos < num_cached_bucket; pos++){
         int non_dummies = 0;
         for(int i = 0; i < bucket_size; i++){
@@ -145,20 +180,27 @@ void OramRing::init_cache_top(){
                 non_dummies++;
             }
         }
+        total_non_dummies += non_dummies;
         num_non_dummies.push_back(non_dummies);
         assert(non_dummies <= real_bucket_size);
     }
 
+    if(total_non_dummies > 0) {
+        assert(0);
+    } else{
+        return;
+    }
+
     //retrieve
     std::vector<Block*> blocks;
-    ((RemoteServerStorage*)storage)->ReadBlockBatchAsBlockRing(positions, offsets, blocks, valids);
+    storage->ReadBlockBatchAsBlockRing(positions, offsets, blocks, valids, false);
 
     for(auto b : blocks){
         // cached_oram.insert({b->index, b});
-         mmstash[make_pair(position_map[b->index], b->index)] = b;
+        mmstash[make_pair(position_map[b->index], b->index)] = b;
     }
 
-    // cout << mmstash.size() << " blocks cached locally." << endl;
+    cout << mmstash.size() << " blocks cached locally." << endl;
 
     // int cnt = 0;
     // for(int pos = 0; pos < num_cached_bucket; pos++){
@@ -172,14 +214,6 @@ void OramRing::init_cache_top(){
     //     }
     // }
 }
-
-/*
-Workflow here:
-1. Find all the leaves
-2. Check the meta data to see if there's any bucket needs reshuffle
-3. Early reshuffle them
-4. Fetch the path
-*/
 
 int OramRing::ReverseBits(int g, int bits_length) {
     /*
@@ -201,10 +235,8 @@ int OramRing::ReverseBits(int g, int bits_length) {
 }
 
 void OramRing::early_reshuffle(vector<int> buckets){
-    int num_rounds = ((RemoteServerStorage*) storage)->io->num_rounds;
-
-    this->num_reshuffles++;
-
+    num_reshuffles++;
+    
     vector<int> positions;
     vector<int> offsets;
     vector<bool> valids;
@@ -247,7 +279,7 @@ void OramRing::early_reshuffle(vector<int> buckets){
     }
 
     std::vector<Block*> blocks;
-    ((RemoteServerStorage*)storage)->ReadBlockBatchAsBlockRing(positions, offsets, blocks, valids);
+    storage->ReadBlockBatchAsBlockRing(positions, offsets, blocks, valids, true);
 
     std::random_device rd;  
     std::mt19937 g(rd());
@@ -279,31 +311,66 @@ void OramRing::early_reshuffle(vector<int> buckets){
     }
 
     // write back to server
-    ((RemoteServerStorage*)storage)->WriteBucketBatchMapAsBlockRing(reshuffled_buckets, bucket_size);
+    storage->WriteBucketBatchMapAsBlockRing(reshuffled_buckets, bucket_size, true);
 
-    rounds_for_early_reshuffle += ((RemoteServerStorage*) storage)->io->num_rounds - num_rounds;
-
-    // mark the previous round as closed
-    ((RemoteServerStorage*)storage)->io->last_call = LastCall::Recv;    
 }
+
+std::vector<int*> OramRing::access(std::vector<Operation> ops, std::vector<int> blockIndices, std::vector<int*> newdata, int pad_l){
+    if(batching){
+        return batch_multi_access_swap_ro(ops, blockIndices, newdata, pad_l);
+    } else{
+        vector<int*> ret;
+        for(int i = 0; i < ops.size(); i++){
+            vector<int*> tmp = batch_multi_access_swap_ro(
+                {ops[i]},
+                {blockIndices[i]},
+                {newdata[i]},
+                1
+            );
+            ret.push_back(tmp[0]);
+        }
+        for(int i = ops.size(); i < pad_l; i++){
+            batch_multi_access_swap_ro(
+                {},
+                {},
+                {},
+                1
+            );
+        }
+        return ret;
+    }
+}
+
+
+/*
+    Workflow here:
+    1. Find all the leaves
+    2. Check the meta data to see if there's any bucket needs reshuffle
+    3. Early reshuffle them
+    4. Fetch the path
+*/
+
 
 std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> ops, std::vector<int> blockIndices, std::vector<int*> newdata , int pad_l){
 
     // cout << "Entering bmasr" << endl;
-    int len = ops.size();
     std::vector<int*> ret;
+
+    // check each bucket on the paths to see if early reshuffle is required
     {
-        vector<int> leaves;
-        vector<int> positions;
+        vector<int> leaves; // old leaves
+        vector<int> positions; // bucket offsets
         vector<int> block_ids; // only for reshuflle
 
         bool reshuffle = false;
         set<int> reshuffle_buckets;
 
+        // check for real access
         for(int block_id : blockIndices){
             int oldLeaf = position_map[block_id];
             bool found = false;
 
+            // traverse the path
             for (int l = num_levels - 1; l >= num_cached_levels; l--) {
                 int pos = P(oldLeaf, l);
                 // check metadata and increase count
@@ -322,6 +389,7 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
             leaves.push_back(oldLeaf);
         }
 
+        // check for dummy access
         for(int i = leaves.size(); i < pad_l; i++){
             int newLeaf = rand_gen->getRandomLeafWithBound(num_leaves);
 
@@ -341,15 +409,18 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
             }
         }
 
-        // Reshuffle 
-        // Re-generate the offsets for shuffled buckets
+        // early_reshuffle({65530, 5677});
+
+        // reshuffle if necessary
         if(reshuffle){
             // cout << "Early reshuffle " << reshuffle_buckets.size() << " buckets." << endl;
             early_reshuffle(vector<int>(reshuffle_buckets.begin(), reshuffle_buckets.end()));
         }
 
-        vector<int> offsets;
-        vector<bool> valids;
+        // generate the block offset for each bucket
+        vector<int> offsets; // interested block offset within each bucket
+        vector<bool> valids; // whether the block is a useful block, each path should contain exactly 1 useful block (could be a dummy tho)
+
         for(int i = 0; i < positions.size(); i++){
             int pos = positions[i];
             bool real = false;
@@ -360,6 +431,7 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
             } else{
                 valids.push_back(false);
             }
+
             if(reshuffle && reshuffle_buckets.find(pos) != reshuffle_buckets.end()){
                 // update the count if this bucket is reshuffled
                 metadata[pos].count++;
@@ -371,8 +443,6 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
         }
 
         // revisit valids incase of cache miss
-        // base on the assumption that all ctx of dummies are the same
-        // Fix this later...
         int interval  = num_levels - num_cached_levels;
         assert(valids.size() == interval * pad_l);
         for(int i = 0; i < pad_l; i++){
@@ -380,6 +450,7 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
             for (int j = 0;j < interval; j++) {
                 found = found || valids[i*interval + j];
             }
+            // mark the last dummy as valid block
             if(!found){
                 valids[i*interval] = true;
             }
@@ -401,7 +472,7 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
         // Batch read
         std::vector<Block*> blocks;
         // auto t_0 = std::chrono::high_resolution_clock::now();
-        ((RemoteServerStorage*)storage)->ReadBlockBatchAsBlockRingXor(positions, offsets, blocks, pad_l, valids);
+        storage->ReadBlockBatchAsBlockRingXor(positions, offsets, blocks, pad_l, valids);
 
         // cout << "saving data" << endl;
 
@@ -410,21 +481,21 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
             // cout << "saving data: " << idx << endl;
             if (idx != -1) {
                 // cout << "Got: " << b->index << endl;
+                if(mmstash.find(make_pair(position_map[idx], idx)) != mmstash.end()){
+                    cout << "XXXXXXXXXXXXXXXXXXXXXXXX Overwrite mmstash..."  << endl;
+                }
                 auto it = mmstash.find(make_pair(position_map[idx], idx));
                 mmstash[make_pair(position_map[idx], idx)] = b;
             } else{
-                // free dummy blocks
-                // avoid memory leaks
+                // free dummy blocks to avoid memory leaks
                 delete b;
             }
         }
         
-
-        // cout << "saving data done" << endl;
     }
     
     // Read request data from stash
-    for(int i = 0; i < len; i++){
+    for(int i = 0; i < ops.size(); i++){
         int blockIndex = blockIndices[i];
         int oldLeaf = position_map[blockIndex];
         int newLeaf = rand_gen->getRandomLeafWithBound(num_leaves);
@@ -456,17 +527,24 @@ std::vector<int*> OramRing::batch_multi_access_swap_ro(std::vector<Operation> op
         }
     } 
 
+    if(!lazy_eveiction){
+        evict_and_write_back();   
+    }
+
     return ret;
 }
 
 void OramRing::evict_and_write_back(){
-    int num_rounds = ((RemoteServerStorage*)storage)->io->num_rounds;
-    // Evictions
-
-    // Find the paths
+    // cout << "Eviction\n";
+    // find the # evicted paths
     int num_paths = (cnt_delayed_leaves / evict_rate);
     // cout << "evict - num_paths: " << num_paths << endl;
 
+    if(num_paths == 0){
+        return;
+    }
+
+    // generate paths in reverse-lexicographical order
     vector<int> leaves;
     for(int i = 0; i < num_paths; i++){
         int g = ReverseBits(this->G, num_levels - 1);
@@ -475,10 +553,10 @@ void OramRing::evict_and_write_back(){
     }
 
     // Generate positions
-    vector<int> positions;
+    vector<int> positions; 
     vector<int> offsets;
     vector<bool> valids;
-    set<int> position_cache;
+    set<int> position_cache; // avoid double evict in case of path overlap
     for (int l = num_levels - 1; l >= num_cached_levels; l--) {
         for(int leaf : leaves){
             int pos = P(leaf, l);
@@ -496,6 +574,9 @@ void OramRing::evict_and_write_back(){
                     }
                 }
 
+                // // here if a bucket has been touched c times, then we should only read Z - c right?
+                // int remain_real_block_size = real_bucket_size - metadata[pos].count;
+
                 for(int j = 0; j < bucket_size; j++){
                     if(z >= real_bucket_size){
                         break;
@@ -509,34 +590,19 @@ void OramRing::evict_and_write_back(){
                     }
                 }
                 position_cache.insert(pos);
+                // make sure every bucket we read the same amount of blocks
                 assert(z == real_bucket_size);
             }
         }
     }
 
-    // if(cache_top){
-    //     // push all cached oram tree into stash
-    //     for (const auto& pair : cached_oram) {
-    //         mmstash[make_pair(position_map[pair.first], pair.first)] = pair.second;
-    //     }
-    //     cached_oram.clear();
-    // }
-    
-
     // Fetch the paths from remote
-    // Note: instead of fetching all, we should only fetch valid things
     std::vector<Block*> blocks;
-    // auto t_0 = std::chrono::high_resolution_clock::now();
-    ((RemoteServerStorage*)storage)->ReadBlockBatchAsBlockRing(positions, offsets, blocks, valids);
+    storage->ReadBlockBatchAsBlockRing(positions, offsets, blocks, valids, false);
 
     // Insert each block into stash
     for(Block* b : blocks){
         int idx = b->index;
-        // assert(idx != -1);
-        // idx will not be -1
-        // auto it = mmstash.find(make_pair(position_map[idx], idx));
-        // mmstash[make_pair(position_map[idx], idx)] = b;
-
         if (idx != -1) {
             auto it = mmstash.find(make_pair(position_map[idx], idx));
             if (it == mmstash.end()){
@@ -616,17 +682,15 @@ void OramRing::evict_and_write_back(){
         }
     } 
 
-    ((RemoteServerStorage*)storage)->WriteBucketBatchMapAsBlockRing(evicted_storage, bucket_size);
+    storage->WriteBucketBatchMapAsBlockRing(evicted_storage, bucket_size, false);
 
     cnt_delayed_leaves = 0;
     cnt_q ++;
 
-    // cout << "evict mmsatsh size: " << mmstash.size() << " / " << num_cached_bucket * real_bucket_size << " resuffles: " << cnt_early_reshuffle*1.0 / cnt_q<< endl;
+    // if(mmstash.size() != 0){
+    //     cout << "evict mmsatsh size: " << mmstash.size() << " / " << num_cached_bucket * real_bucket_size << " resuffles: " << cnt_early_reshuffle*1.0 / cnt_q<< endl;
+    // }
     // cnt_early_reshuffle = 0;
-    rounds_for_eviction += (((RemoteServerStorage*)storage)->io->num_rounds - num_rounds);
-
-    // mark the previous round as closed
-    ((RemoteServerStorage*)storage)->io->last_call = LastCall::Recv;
 }
 
 std::pair<int, int> OramRing::Q(int leaf, int level){

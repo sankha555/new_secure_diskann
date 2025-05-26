@@ -86,7 +86,8 @@ template <typename T, typename LabelT = uint32_t> class OramIndex
     DISKANN_DLLEXPORT void oram_read(
         vector<std::pair<uint32_t, char *>> frontier_nhoods, 
         OramAPI* oram, 
-        int beam_width
+        int beam_width,
+        QueryStats* stats
     );
 
     DISKANN_DLLEXPORT void cached_beam_search_with_oram(const T *query, const uint64_t k_search, const uint64_t l_search,

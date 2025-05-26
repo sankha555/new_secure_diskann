@@ -7,12 +7,13 @@
 #include "OramInterface.h"
 #include "RandForOramInterface.h"
 // #include "UntrustedStorageInterface.h"
-#include "RemoteServerStorage.h"
+// #include "RemoteServerStorage.h"
+#include "RemoteRing.h"
 #include <cmath>
 #include <map>
 #include <set>
 #include <bitset>
-#include <assert.h>
+#include <cassert>
 
 class OramMetaData {
 public:
@@ -23,13 +24,14 @@ public:
     // OramMetaData();
 
     int GetBlockOffset(int block_id, bool& real); 
+    int GetBlockOffsetLeak(int block_id, bool& real); 
     void print_stat(); 
     // int ShuffleAndReset();
 };
 
 class OramRing : public OramInterface {
 public:
-    UntrustedStorageInterface* storage;
+    RemoteRing* storage;
     RandForOramInterface* rand_gen;
     int G;
 
@@ -52,12 +54,10 @@ public:
     map<int, Block*> cached_oram;
     int cnt_early_reshuffle;
     int cnt_q;
-    int num_reshuffles;
 
-    int rounds_for_early_reshuffle = 0;
-    int rounds_for_oram_access = 0;
-    int rounds_for_eviction = 0;
-
+    bool batching;
+    bool lazy_eveiction;
+    int num_reshuffles = 0;
 
     vector<int> position_map; //array
     vector<OramMetaData> metadata;
@@ -67,15 +67,16 @@ public:
 
     map<std::pair<int, int>, Block*, PairComparator> mmstash;
 
-    OramRing(UntrustedStorageInterface* storage,
-            RandForOramInterface* rand_gen, int block_size, int bucket_size, int dummy_size, int evict_rate, int num_blocks, int num_levels, int cached_levels);
+    OramRing(RemoteRing* storage,
+            RandForOramInterface* rand_gen, RingOramConfig config, int num_levels, int cached_levels, bool batch = true, bool lazy = true);
 
     void evict_and_write_back();
 
     void init_cache_top();
 
-    std::vector<int*> batch_multi_access_swap_ro(std::vector<Operation> ops, std::vector<int> blockIndices, std::vector<int*> newdata, int pad_l);
+    std::vector<int*> access(std::vector<Operation> ops, std::vector<int> blockIndices, std::vector<int*> newdata, int pad_l);
 
+    std::vector<int*> batch_multi_access_swap_ro(std::vector<Operation> ops, std::vector<int> blockIndices, std::vector<int*> newdata, int pad_l);
 
     template<typename T>
     std::vector<T*> batch_multi_access_swap_ro_templated(std::vector<Operation> ops, std::vector<int> blockIndices, std::vector<T*> newdata , int pad_l){
@@ -197,9 +198,7 @@ public:
             // Batch read
             std::vector<Block*> blocks;
             // auto t_0 = std::chrono::high_resolution_clock::now();
-            int num_rounds = ((RemoteServerStorage*) storage)->io->num_rounds;
-            ((RemoteServerStorage*)storage)->ReadBlockBatchAsBlockRingXor(positions, offsets, blocks, pad_l, valids);
-            rounds_for_oram_access += (((RemoteServerStorage*) storage)->io->num_rounds - num_rounds);
+            ((RemoteRing*)storage)->ReadBlockBatchAsBlockRingXor(positions, offsets, blocks, pad_l, valids);
             // cout << "saving data" << endl;
 
             for(Block* b : blocks){

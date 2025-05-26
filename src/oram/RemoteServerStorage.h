@@ -30,9 +30,10 @@ public:
     bool sel;
     int num_levels;
     std::map<int, std::vector<uint8_t>> hash_map;
+    std::map<int, std::vector<uint8_t>> reshuffle_inner_hash_map;
     char* buckets_fname;
 
-    RemoteServerStorage(int block_size, NetIO* io, bool isServer, int num_levels, bool integrity=false);
+    RemoteServerStorage(int block_size, NetIO* io, bool isServer, int num_levels, bool integrity, RingOramConfig oram_config);
 
     void insecure_direct_load();
 
@@ -43,30 +44,41 @@ public:
 
     void ReadBucketBatch(const std::vector<int>& positions, std::vector<Bucket>& bkts);
     void ReadBucketBatchAsBlock(const std::vector<int>& positions, std::vector<Block*>& blocks);
-    void ReadBlockBatchAsBlockRing(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, std::vector<bool> &valids);
+    void ReadBlockBatchAsBlockRing(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, std::vector<bool> &valids, bool isReshuffle);
     
     void ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, size_t num_real_blocks, std::vector<bool>& valids);
 
-    void ReadBucketBatchAsBlockRing(const std::vector<int>& positions, std::vector<Block*>& blocks, int bucket_size);
+    // void ReadBucketBatchAsBlockRing(const std::vector<int>& positions, std::vector<Block*>& blocks, int bucket_size);
     void WriteBucketBatch(const std::vector<int>& positions, const std::vector<Bucket>& bucket_to_write);
     void WriteBucketBatchMap(const std::map<int, Bucket>& bucket_to_write);
     void WriteBucketBatchMapAsBlock(const std::map<int, vector<Block*>>& bucket_to_write);
-    void WriteBucketBatchMapAsBlockRing(const std::map<int, vector<Block*>>& bucket_to_write, int bucket_size);
+    void WriteBucketBatchMapAsBlockRing(const std::map<int, vector<Block*>>& bucket_to_write, int bucket_size, bool isReshuffle);
 
     // Insecure Family
     bool integrity;
-    std::vector<uint8_t> root;
+    std::vector<uint8_t> roots;
     void insecureLoad(vector<Bucket>& input_bkts);
     void insecureLoadPtr(int* bkts);
     void sync_root();
 
     // Integrity related
+    RingOramConfig oram_config;
     size_t per_bucket_tree_height;
 	size_t per_bucket_hashes;
     uint8_t* per_bucket_hash;
-    void sync_hash(RingOramConfig config);
+    // void sync_hash(RingOramConfig config);
+    void sync_hash_roots();
 
     void recv_and_verify_hash(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid);
+
+    void recv_and_verify_hash_reshuffle(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid);
+
+    void recv_and_verify_hash_bucket(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid);
+
+    void recv_and_verify_hash_2(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid);
+
+    void update_mt(const std::vector<int> &position, unsigned char* payload);
+    void update_mt_reshuffle(const std::vector<int> &position, unsigned char* payload);
 
     int P(int leaf, int level);
     bool verify_and_insert(int pos, uint8_t* hash);
@@ -89,7 +101,3 @@ private:
 
 
 #endif //PORAM_REMOTESERVERSTORAGE_H
-
-
-// void RunServer(NetIO* io, RemoteServerStorage* rssa);
-// void CloseServer(NetIO* io);

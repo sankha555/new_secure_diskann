@@ -38,6 +38,10 @@ struct QueryStats
     unsigned n_actualhops = 0;
     unsigned num_fixed_rts = 0;
     unsigned num_search_iterations = 0; // while loop counter
+
+    std::chrono::duration<double> communication_time;
+    std::chrono::duration<double> user_perceived_time;
+    std::chrono::duration<double> e2e_time;
 };
 
 template <typename T>
@@ -66,5 +70,16 @@ inline double get_mean_stats(QueryStats *stats, uint64_t len, const std::functio
         avg += (double)member_fn(stats[i]);
     }
     return avg / len;
+}
+
+template <typename T>
+inline double get_total_stats(QueryStats *stats, uint64_t len, const std::function<T(const QueryStats &)> &member_fn)
+{
+    double sum = 0;
+    for (uint64_t i = 0; i < len; i++)
+    {
+        sum += (double)member_fn(stats[i]);
+    }
+    return sum;
 }
 } // namespace diskann

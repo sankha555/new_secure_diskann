@@ -11,10 +11,11 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <iomanip> // For std::hex, std::setw, std::setfill
+#include <cmath>
 
 #include "evp.h"
 
-#define NUM_THREADS 1
+#define NUM_THREADS 4
 
 using namespace std;
 
@@ -23,7 +24,9 @@ enum RequestType {
     Write,
     ReadBatch,
 	WriteBatch,
+	WriteBatch_R,
 	ReadBatchBlock,
+	ReadBatchBlock_R,
 	ReadBatchBlockXor,
 	WriteBatchBlock,
 	Init,
@@ -52,7 +55,8 @@ int get_sibling(int me){
 // 	}
 // }
 
-RemoteServerStorage::RemoteServerStorage(int block_size, NetIO* io, bool isServer, int num_levels, bool integrity) {
+RemoteServerStorage::RemoteServerStorage(int block_size, NetIO* io, bool isServer, int num_levels, bool integrity, RingOramConfig oram_config) 
+	: oram_config(oram_config) {
 	
 	this->is_initialized = true;
 	this->is_capacity_set = false;
@@ -61,21 +65,517 @@ RemoteServerStorage::RemoteServerStorage(int block_size, NetIO* io, bool isServe
 	this->block_size = block_size;
 	this->num_levels = num_levels;
 	this->integrity = integrity;
-	this->root.resize(SHA256_DIGEST_LENGTH);
 }
 
-void RemoteServerStorage::sync_hash(RingOramConfig config){
+void RemoteServerStorage::sync_hash_roots(){
 
-	// cout << "sync hash start ..." << endl;
-
-	per_bucket_tree_height = ceil(log10(config.bucket_size) / log10(2)) + 1;
+	per_bucket_tree_height = ceil(log10(oram_config.bucket_size) / log10(2)) + 1;
 	per_bucket_hashes = pow(2, per_bucket_tree_height) - 1;
-	size_t buckets_hash_size = SHA256_DIGEST_LENGTH * config.num_buckets;
-	per_bucket_hash = new uint8_t[buckets_hash_size];
-	io->recv_data(per_bucket_hash, buckets_hash_size);
 
-	// cout << "sync hash start done" << endl;
+	size_t oram_cached_levels = oram_config.cached_levels;
+
+	// multiple roots in case of oram caching
+	size_t roots_length = (1 << oram_cached_levels)*SHA256_DIGEST_LENGTH;
+
+	this->roots.resize(roots_length);
+	io->recv_data(this->roots.data(), roots_length);
+
+	// put roots in the hash map
+	size_t bucket_id = (1 << oram_cached_levels) - 1;
+	for(size_t hid = 0; hid < (1 << oram_cached_levels); hid++){
+		// cout << "add root id: " << bucket_id << endl;
+		hash_map[bucket_id] = vector<uint8_t>(
+			this->roots.begin() + hid*SHA256_DIGEST_LENGTH, 
+			this->roots.begin() + (hid+1)*SHA256_DIGEST_LENGTH
+		);
+		bucket_id ++;
+	}
+
 }
+
+// void RemoteServerStorage::sync_hash(RingOramConfig config){
+
+// 	// cout << "sync hash start ..." << endl;
+
+// 	per_bucket_tree_height = ceil(log10(config.bucket_size) / log10(2)) + 1;
+// 	per_bucket_hashes = pow(2, per_bucket_tree_height) - 1;
+// 	size_t buckets_hash_size = SHA256_DIGEST_LENGTH * config.num_buckets;
+// 	per_bucket_hash = new uint8_t[buckets_hash_size];
+// 	io->recv_data(per_bucket_hash, buckets_hash_size);
+
+// 	// cout << "sync hash start done" << endl;
+// }
+
+void RemoteServerStorage::recv_and_verify_hash_reshuffle(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid){
+	// cout << "recv and verify reshuffle" << endl;
+	// Each bucket in early reshuffle doesn't have path constraint
+	size_t num_buckets = position.size() / oram_config.real_bucket_size;
+
+	// here we just fetch all block's hashes for each bucket
+	size_t num_hashes = num_buckets*oram_config.bucket_size;
+	uint8_t* inner_leaves_payload = new uint8_t[num_hashes*SHA256_DIGEST_LENGTH];
+	io->recv_data(inner_leaves_payload, num_hashes*SHA256_DIGEST_LENGTH);
+
+	// overwrite the fetched blocks hashes
+	for(size_t i = 0; i < position.size(); i++){
+		size_t pos = position[i];
+		size_t off = offset[i];
+		size_t bucket_id = i / oram_config.real_bucket_size;
+
+		unsigned char* ctx = payload + i*SBucket::getCipherSize();
+		// TODO opt this later
+		uint8_t* hash = new uint8_t[SHA256_DIGEST_LENGTH];
+		uint8_t* ref = inner_leaves_payload + (bucket_id*oram_config.bucket_size + off) * SHA256_DIGEST_LENGTH;
+
+		sha256_wrapper(ctx, SBucket::getCipherSize(), hash);
+
+		for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			if(hash[j] != ref[j]){
+				assert(0);
+			}
+		}
+
+		delete[] hash;
+	}
+
+	size_t inner_mt_size = num_buckets*per_bucket_hashes*SHA256_DIGEST_LENGTH;
+	uint8_t* inner_mt = new uint8_t[inner_mt_size];
+	memset(inner_mt, 0, inner_mt_size);
+
+	size_t first_leaf_off = (per_bucket_hashes - 1) / 2;
+	for(size_t i = 0 ; i < num_buckets; i++){
+		memcpy(
+			inner_mt + (i*per_bucket_hashes + first_leaf_off)*SHA256_DIGEST_LENGTH,
+			inner_leaves_payload + (i*oram_config.bucket_size)*SHA256_DIGEST_LENGTH,
+			oram_config.bucket_size*SHA256_DIGEST_LENGTH
+		);
+	}
+
+	delete[] inner_leaves_payload;
+
+	// reconstruct bucket hash
+	for(size_t i = 0 ; i < num_buckets; i++){
+		for(size_t j = first_leaf_off; j >= 1; j--){
+			size_t id = j-1;
+			size_t lid = 2*j-1;
+			size_t rid = 2*j;
+
+			assert(lid <=  per_bucket_hashes - 1);
+
+			uint8_t* dst = inner_mt + (i * per_bucket_hashes + id)* SHA256_DIGEST_LENGTH;
+			uint8_t* lsrc = inner_mt + (i * per_bucket_hashes + lid)* SHA256_DIGEST_LENGTH;
+			uint8_t* rsrc = inner_mt + (i * per_bucket_hashes + rid)* SHA256_DIGEST_LENGTH;
+
+			sha256_twin_input_wrapper(
+				lsrc, SHA256_DIGEST_LENGTH,
+				rsrc, SHA256_DIGEST_LENGTH,
+				dst
+			);
+		}
+	}
+
+	// now we need 
+	// 1. the bucket (inner root) hash of the ancestors of each bucket till the root (cached layer) 
+	// 2. the full hash of the siblings and two immediate childrent if the bucket is not leaf node
+	vector<int> bucket_positions;
+	vector<int> inner_hash_pos;
+	vector<int> outer_hash_pos;
+	vector<int> inner_hash_interval;
+	int interval = 0;
+	for(int i = 0; i < num_buckets; i++){
+		int pos = position[i*oram_config.real_bucket_size];
+		bucket_positions.push_back(pos);
+
+		if(pos >= capacity / 2){
+			// leaf bucket
+		} else{
+			int l = 2*pos + 1;
+			int r = l + 1;
+			outer_hash_pos.push_back(l);
+			outer_hash_pos.push_back(r);
+		}
+
+		// outer_hash_pos.push_back(get_sibling(pos));
+		inner_hash_interval.push_back(interval);
+
+		int pos_iter = pos;
+		// loop ancestors
+		while(pos_iter >= (1 << oram_config.cached_levels) - 1){
+			outer_hash_pos.push_back(get_sibling(pos_iter));
+			inner_hash_pos.push_back(pos_iter);
+			interval++;
+
+			pos_iter = (pos_iter - 1) / 2;
+		}
+	}
+
+	// std::cout << "interval: ";
+	// for (const auto& element : inner_hash_interval) {
+	// 	std::cout << element << ' ';
+	// }
+	// std::cout << '\n';
+
+	// std::cout << "inner hash pos: ";
+	// for (const auto& element : inner_hash_pos) {
+	// 	std::cout << element << ' ';
+	// }
+	// std::cout << '\n';
+
+	// std::cout << "outer hash pos: ";
+	// for (const auto& element : outer_hash_pos) {
+	// 	std::cout << element << ' ';
+	// }
+	// std::cout << '\n';
+
+	// assert(0);
+
+	size_t inner_hash_size = inner_hash_pos.size();
+	size_t outer_hash_size = outer_hash_pos.size();
+
+	uint8_t* inner_hash_payload = new uint8_t[inner_hash_size*SHA256_DIGEST_LENGTH];
+	uint8_t* outer_hash_payload = new uint8_t[outer_hash_size*SHA256_DIGEST_LENGTH];
+
+	io->recv_data(inner_hash_payload, inner_hash_size*SHA256_DIGEST_LENGTH);
+	io->recv_data(outer_hash_payload, outer_hash_size*SHA256_DIGEST_LENGTH);
+
+	// check inner hash consistency
+	for(size_t i = 0; i < num_buckets; i++){
+		uint8_t* local = inner_mt + i*per_bucket_hashes*SHA256_DIGEST_LENGTH;
+		size_t interval = inner_hash_interval[i];
+		uint8_t* remote = inner_hash_payload + interval*SHA256_DIGEST_LENGTH;
+
+		if(memcmp(local, remote, SHA256_DIGEST_LENGTH) != 0){
+			assert(0);
+		}
+	}
+
+	// insert outer hashes
+	for(size_t i = 0; i < outer_hash_size; i++){
+		int pos = outer_hash_pos[i];
+		hash_map[pos] = vector<uint8_t>(outer_hash_payload + i*SHA256_DIGEST_LENGTH, outer_hash_payload + (i+1)*SHA256_DIGEST_LENGTH);
+	}
+
+	// reconstruct outer mt
+	for(size_t i = 0; i < inner_hash_size; i++){
+
+		int pos = inner_hash_pos[i];
+		uint8_t* bucket_hash = inner_hash_payload + i*SHA256_DIGEST_LENGTH;
+		reshuffle_inner_hash_map[pos] = vector<uint8_t>(bucket_hash, bucket_hash+SHA256_DIGEST_LENGTH);
+
+		uint8_t* tree_bucket_hash = new uint8_t[SHA256_DIGEST_LENGTH];
+
+		if(pos >= capacity / 2){
+			// leaf bucket
+			memcpy(tree_bucket_hash, bucket_hash, SHA256_DIGEST_LENGTH);
+		} else{
+			int l = 2*pos + 1;
+			int r = l + 1;
+			auto lit = hash_map.find(l);
+			auto rit = hash_map.find(r);
+
+			if(lit == hash_map.end() || rit == hash_map.end()){
+				// This shouldn't happen
+				assert(0);
+			}
+
+			sha256_trib_input_wrapper(
+				bucket_hash, SHA256_DIGEST_LENGTH,
+				lit->second.data(), SHA256_DIGEST_LENGTH,
+				rit->second.data(), SHA256_DIGEST_LENGTH,
+				tree_bucket_hash
+			);
+		}
+
+		verify_and_insert(pos, tree_bucket_hash);
+		delete[] tree_bucket_hash;
+	}
+
+	delete[] inner_mt;
+	delete[] inner_hash_payload;
+	delete[] outer_hash_payload;
+}
+
+void RemoteServerStorage::recv_and_verify_hash_bucket(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid){
+
+	// cout << "recv_and_verify_hash_bucket..." << endl;
+
+	assert(position.size() % oram_config.real_bucket_size == 0);
+	size_t num_buckets = position.size() / oram_config.real_bucket_size;
+
+	// here we just fetch all block's hashes for each bucket
+	// size_t inner_mt_num_leaves = 1 << (oram_config.bucket_size - 1);
+	size_t num_hashes = num_buckets*oram_config.bucket_size;
+	uint8_t* inner_leaves_payload = new uint8_t[num_hashes*SHA256_DIGEST_LENGTH];
+
+	uint8_t* outer_mt_payload = new uint8_t[num_buckets*SHA256_DIGEST_LENGTH];
+	uint8_t* reconstruct_bucket_hash = new uint8_t[num_buckets *SHA256_DIGEST_LENGTH];
+
+	io->recv_data(inner_leaves_payload, num_hashes*SHA256_DIGEST_LENGTH);
+	io->recv_data(outer_mt_payload, num_buckets *SHA256_DIGEST_LENGTH);
+
+	// overwrite the fetched blocks hashes
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0; i < position.size(); i++){
+		size_t pos = position[i];
+		size_t off = offset[i];
+		size_t bucket_id = i / oram_config.real_bucket_size;
+
+		unsigned char* ctx = payload + i*SBucket::getCipherSize();
+		uint8_t* ref = inner_leaves_payload + (bucket_id*oram_config.bucket_size + off) * SHA256_DIGEST_LENGTH;
+		sha256_wrapper(ctx, SBucket::getCipherSize(), ref);
+	}
+
+	// copy the hashes to a larger chunk for eaiser reconstruction
+	size_t inner_mt_size = num_buckets*per_bucket_hashes*SHA256_DIGEST_LENGTH;
+	uint8_t* inner_mt = new uint8_t[inner_mt_size];
+	memset(inner_mt, 0, inner_mt_size);
+
+	size_t first_leaf_off = (per_bucket_hashes - 1) / 2;
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0 ; i < num_buckets; i++){
+		memcpy(
+			inner_mt + (i*per_bucket_hashes + first_leaf_off)*SHA256_DIGEST_LENGTH,
+			inner_leaves_payload + (i*oram_config.bucket_size)*SHA256_DIGEST_LENGTH,
+			oram_config.bucket_size*SHA256_DIGEST_LENGTH
+		);
+	}
+
+	// cout << "recv_and_verify_hash_bucket: reconstruct" << endl;
+
+	// reconstruct bucket hash
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0 ; i < num_buckets; i++){
+		for(size_t j = first_leaf_off; j >= 1; j--){
+			size_t id = j-1;
+			size_t lid = 2*j-1;
+			size_t rid = 2*j;
+
+			assert(lid <=  per_bucket_hashes - 1);
+
+			uint8_t* dst = inner_mt + (i * per_bucket_hashes + id)* SHA256_DIGEST_LENGTH;
+			uint8_t* lsrc = inner_mt + (i * per_bucket_hashes + lid)* SHA256_DIGEST_LENGTH;
+			uint8_t* rsrc = inner_mt + (i * per_bucket_hashes + rid)* SHA256_DIGEST_LENGTH;
+
+			sha256_twin_input_wrapper(
+				lsrc, SHA256_DIGEST_LENGTH,
+				rsrc, SHA256_DIGEST_LENGTH,
+				dst
+			);
+		}
+	}
+
+	// for(size_t i = 0 ; i < num_buckets; i++){
+	// 	uint8_t* bucket_hash = inner_mt + (i * per_bucket_hashes)* SHA256_DIGEST_LENGTH;
+	// 	cout << "reconstructed hash: " << position[i*oram_config.real_bucket_size] << ": ";
+	// 	for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+	// 		cout << (int)(bucket_hash[j]) << " ";
+	// 	}
+	// 	cout << endl;
+	// }
+
+	// assert(0);
+
+	// cout << "recv_and_verify_hash_bucket: reconstruct outer mt" << endl;
+
+	// reconstruct outer hash
+	for(size_t i = 0 ; i < num_buckets; i++){
+		int bucket_pos = position[i*oram_config.real_bucket_size];
+		int sib = get_sibling(bucket_pos);
+
+		uint8_t* sib_hash = outer_mt_payload + i*SHA256_DIGEST_LENGTH;
+
+		//  cout << "inserting sib: " << sib << endl;
+		if(!verify_and_insert(sib, sib_hash)){
+			cout << "Hash verification fails at sib: " << sib << endl;
+			assert(0);
+		}
+
+		// Compute and insert current hash
+		uint8_t* bucket_hash = inner_mt + i * per_bucket_hashes * SHA256_DIGEST_LENGTH;
+		uint8_t* tree_bucket_hash = new uint8_t[SHA256_DIGEST_LENGTH];
+		if(bucket_pos >= capacity / 2){
+			// leaf bucket
+			memcpy(tree_bucket_hash, bucket_hash, SHA256_DIGEST_LENGTH);
+		} else{
+			int l = 2*bucket_pos + 1;
+			int r = l + 1;
+			auto lit = hash_map.find(l);
+			auto rit = hash_map.find(r);
+
+			if(lit == hash_map.end() || rit == hash_map.end()){
+				// This shouldn't happen
+				assert(0);
+			}
+
+			sha256_trib_input_wrapper(
+				bucket_hash, SHA256_DIGEST_LENGTH,
+				lit->second.data(), SHA256_DIGEST_LENGTH,
+				rit->second.data(), SHA256_DIGEST_LENGTH,
+				tree_bucket_hash
+			);
+
+			// cout << "bucket_hash: " << bucket_pos << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(bucket_hash[j]) << " ";
+			// }
+			// cout << endl;
+
+			// cout << "lit: " << l << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(lit->second.data()[j]) << " ";
+			// }
+			// cout << endl;
+
+			// cout << "rit: " << r << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(rit->second.data()[j]) << " ";
+			// }
+			// cout << endl;
+
+			// cout << "reconstructed: " << bucket_pos << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(tree_bucket_hash[j]) << " ";
+			// }
+			// cout << endl;
+
+			// assert(0);
+		}
+
+
+		if(!verify_and_insert(bucket_pos, tree_bucket_hash)){
+			cout << "Hash verification fails at pos: " << bucket_pos << endl;
+			assert(0);
+		}
+
+		delete[] tree_bucket_hash;
+	}
+
+	delete[] inner_leaves_payload;
+	delete[] outer_mt_payload;
+	delete[] reconstruct_bucket_hash;
+	delete[] inner_mt;
+
+	// assert(0);
+}
+
+void RemoteServerStorage::recv_and_verify_hash_2(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid){
+
+	// cout << "recv_and_verify_hash_2..." << endl;
+
+	size_t num_hashes = position.size() * (per_bucket_tree_height - 1);
+	// cout << "recv_and_verify_hash_2333..." << endl;
+	uint8_t* inner_mt_payload = new uint8_t[num_hashes*SHA256_DIGEST_LENGTH];
+
+	// cout << "reconstruct bucket hash 0" << endl;
+
+	io->recv_data(inner_mt_payload, num_hashes*SHA256_DIGEST_LENGTH);
+
+	// cout << "reconstruct bucket hash 1" << endl;
+
+	uint8_t* outer_mt_payload = new uint8_t[position.size() *SHA256_DIGEST_LENGTH];
+	uint8_t* reconstruct_bucket_hash = new uint8_t[position.size() *SHA256_DIGEST_LENGTH];
+
+	io->recv_data(outer_mt_payload, position.size() *SHA256_DIGEST_LENGTH);
+
+	// cout << "reconstruct bucket hash" << endl;
+	
+	// reconstruct per bucket hash
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0; i < position.size(); i++){
+		
+		size_t pos = position[i];
+		size_t cur_offset = offset[i] + (per_bucket_hashes + 1) / 2 - 1;
+		// unsigned char* ctx = payload + valid_cnt*SBucket::getCipherSize();
+		unsigned char* ctx = payload + i*SBucket::getCipherSize();
+		uint8_t* hash = reconstruct_bucket_hash + i*SHA256_DIGEST_LENGTH;
+		sha256_wrapper(ctx, SBucket::getCipherSize(), hash);
+
+		for(int cur_height = per_bucket_tree_height; cur_height > 1; cur_height --){
+			uint8_t* sib_hash = inner_mt_payload + i * (per_bucket_tree_height - 1) * SHA256_DIGEST_LENGTH + (per_bucket_tree_height - cur_height) * SHA256_DIGEST_LENGTH;
+
+			// determine left and right
+			uint8_t* l_hash = hash;
+			uint8_t* r_hash = sib_hash;
+
+			if(cur_offset % 2 == 0){
+				l_hash = sib_hash;
+				r_hash = hash;
+			} 
+
+			sha256_twin_input_wrapper(
+				l_hash, SHA256_DIGEST_LENGTH,
+				r_hash, SHA256_DIGEST_LENGTH,
+				hash
+			);
+			cur_offset = (cur_offset - 1) / 2;
+
+		}
+	}
+
+	// reconstuct tree hash
+	// assume that the positions in each path are from bottom to top 
+
+	// cout << "reconstruct tree hash" << endl;
+	for(size_t i = 0; i < position.size(); i++){
+		// cout << "reconstructing pos: " << position[i] << endl;
+
+		int pos = position[i];
+		int sib = get_sibling(pos);
+
+		uint8_t* sib_hash = outer_mt_payload + i*SHA256_DIGEST_LENGTH;
+
+		// cout << "inserting sib: " << sib << endl;
+		if(!verify_and_insert(sib, sib_hash)){
+			cout << "Hash verification fails at sib: " << sib << endl;
+			assert(0);
+		}
+
+		// Compute and insert current hash
+		uint8_t* bucket_hash = reconstruct_bucket_hash + i*SHA256_DIGEST_LENGTH;
+		uint8_t* tree_bucket_hash = new uint8_t[SHA256_DIGEST_LENGTH];
+		if(pos >= capacity / 2){
+			// leaf bucket
+			memcpy(tree_bucket_hash, bucket_hash, SHA256_DIGEST_LENGTH);
+		} else{
+			int l = 2*pos + 1;
+			int r = l + 1;
+			auto lit = hash_map.find(l);
+			auto rit = hash_map.find(r);
+
+			if(lit == hash_map.end() || rit == hash_map.end()){
+				// This shouldn't happen
+				assert(0);
+			}
+
+			sha256_trib_input_wrapper(
+				bucket_hash, SHA256_DIGEST_LENGTH,
+				lit->second.data(), SHA256_DIGEST_LENGTH,
+				rit->second.data(), SHA256_DIGEST_LENGTH,
+				tree_bucket_hash
+			);
+
+			// assert(0);
+		}
+
+
+		if(!verify_and_insert(pos, tree_bucket_hash)){
+			cout << "Hash verification fails at pos: " << pos << endl;
+			assert(0);
+		}
+
+		delete[] tree_bucket_hash;
+	
+	}
+
+	// cout << "recv_and_verify_hash: success!" << endl;
+	// assert(0);
+
+	delete[] inner_mt_payload;
+	delete[] outer_mt_payload;
+	delete[] reconstruct_bucket_hash;
+}
+
+
 
 void RemoteServerStorage::recv_and_verify_hash(const std::vector<int> &position, const std::vector<int> &offset, unsigned char* payload, std::vector<bool> &valid){
 
@@ -85,19 +585,19 @@ void RemoteServerStorage::recv_and_verify_hash(const std::vector<int> &position,
 	uint8_t* hash_payload = new uint8_t[num_hashes*SHA256_DIGEST_LENGTH];
 
 	io->recv_data(hash_payload, num_hashes*SHA256_DIGEST_LENGTH);
+
 	size_t valid_cnt = 0;
 
 	for(size_t i = 0; i < position.size(); i++){
+		// cout << "verifying fail pos: " << position[i] << " offset: " << offset[i] << " valid: " << valid[i] << endl;
 		if(valid[i]){
 			// this block is a real block
 			size_t pos = position[i];
 			size_t cur_offset = offset[i] + (per_bucket_hashes + 1) / 2 - 1;
-			unsigned char* ctx = payload + valid_cnt*SBucket::getCipherSize();
+			// unsigned char* ctx = payload + valid_cnt*SBucket::getCipherSize();
+			unsigned char* ctx = payload + i*SBucket::getCipherSize();
 			uint8_t* hash = new uint8_t[SHA256_DIGEST_LENGTH];
 			sha256_wrapper(ctx, SBucket::getCipherSize(), hash);
-
-
-			// cout << "verifying fail pos: " << pos << " offset: " << offset[i] << endl;
 
 			for(int cur_height = per_bucket_tree_height; cur_height > 1; cur_height --){
 				uint8_t* sib_hash = hash_payload + i * (per_bucket_tree_height - 1) * SHA256_DIGEST_LENGTH + (per_bucket_tree_height - cur_height) * SHA256_DIGEST_LENGTH;
@@ -140,12 +640,296 @@ void RemoteServerStorage::recv_and_verify_hash(const std::vector<int> &position,
 				}
 			}
 
+			// cout << "valid: " << pos << " offset: " << offset[i] << endl;
 			valid_cnt ++;
 		}
 	}
 
 	// cout << "recv_and_verify_hash: success!" << endl;
 
+}
+
+/*
+	Merkle Tree recostruction logic:
+	- If not for Reshuffle:
+		- 1. First reconstruct the inner Merkle Tree for each bucket
+		- 2. Then reconstruct the outer Merkle Tree for the ORAM tree
+		- 3. Send the inner Merkle Tree to server <bucket_id, per_bucket_hashes>
+		- 4. Send the outer Merkle Tree to the server <bucket_id, outer_hash>
+		- 5. Update local hashes
+	- If this is a Reshuffle:
+		- The difference that there's no path
+		- 
+
+*/
+void RemoteServerStorage::update_mt(const std::vector<int> &position, unsigned char* payload){
+
+	size_t num_buckets = position.size();
+	size_t num_blocks = num_buckets * oram_config.bucket_size;
+
+	// hash for each block
+	uint8_t* per_block_hash = new uint8_t[SHA256_DIGEST_LENGTH * num_blocks];
+
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0; i < num_blocks; i++){
+		sha256_wrapper(payload + i*SBucket::getCipherSize(), SBucket::getCipherSize(), per_block_hash + i*SHA256_DIGEST_LENGTH);
+
+		// cout << "bid: " << i << ": ";
+		// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+		// 	cout << (int)((per_block_hash + i*SHA256_DIGEST_LENGTH)[j]) << " ";
+		// }
+		// cout << endl;
+	}
+
+	// assert(0);
+
+	// Merkle Trees for each bucket
+	size_t inner_mt_size = num_buckets * per_bucket_hashes * SHA256_DIGEST_LENGTH;
+	uint8_t* inner_mt = new uint8_t[inner_mt_size];
+	memset(inner_mt, 0, inner_mt_size);
+
+	// copy leaf hashes
+	size_t first_leaf_off = (per_bucket_hashes - 1) / 2;
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0; i < num_buckets; i++){
+		uint8_t* src = per_block_hash + i * oram_config.bucket_size * SHA256_DIGEST_LENGTH;
+		uint8_t* dst = inner_mt + (i * per_bucket_hashes +  first_leaf_off) * SHA256_DIGEST_LENGTH;
+		memcpy(dst, src, oram_config.bucket_size * SHA256_DIGEST_LENGTH);
+	}
+
+	// reconstruct inner mt
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0 ; i < num_buckets; i++){
+		for(size_t j = first_leaf_off; j >= 1; j--){
+			size_t id = j-1;
+			size_t lid = 2*j-1;
+			size_t rid = 2*j;
+
+			assert(lid <=  per_bucket_hashes - 1);
+
+			uint8_t* dst = inner_mt + (i * per_bucket_hashes + id)* SHA256_DIGEST_LENGTH;
+			uint8_t* lsrc = inner_mt + (i * per_bucket_hashes + lid)* SHA256_DIGEST_LENGTH;
+			uint8_t* rsrc = inner_mt + (i * per_bucket_hashes + rid)* SHA256_DIGEST_LENGTH;
+
+			sha256_twin_input_wrapper(
+				lsrc, SHA256_DIGEST_LENGTH,
+				rsrc, SHA256_DIGEST_LENGTH,
+				dst
+			);
+
+		}
+	}
+
+	// reconstruct outer mt
+	for(size_t i = 0; i < num_buckets; i++){
+		int bucket_pos = position[i];
+
+		// cout << "reconstructing: " << bucket_pos << endl;
+
+		uint8_t* bucket_hash = inner_mt + i * per_bucket_hashes * SHA256_DIGEST_LENGTH;
+		uint8_t* tree_bucket_hash = new uint8_t[SHA256_DIGEST_LENGTH];
+
+		if(bucket_pos >= capacity / 2){
+			// leaf bucket
+			memcpy(tree_bucket_hash, bucket_hash, SHA256_DIGEST_LENGTH);
+
+			// cout << "leaf: " << bucket_pos << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(tree_bucket_hash[j]) << " ";
+			// }
+			// cout << endl;
+			// cout << endl;
+
+		} else{
+			int l = 2*bucket_pos + 1;
+			int r = l + 1;
+			auto lit = hash_map.find(l);
+			auto rit = hash_map.find(r);
+
+			if(lit == hash_map.end() || rit == hash_map.end()){
+				// This shouldn't happen
+				assert(0);
+			}
+
+			sha256_trib_input_wrapper(
+				bucket_hash, SHA256_DIGEST_LENGTH,
+				lit->second.data(), SHA256_DIGEST_LENGTH,
+				rit->second.data(), SHA256_DIGEST_LENGTH,
+				tree_bucket_hash
+			);
+
+			// cout << "bucket_hash: " << bucket_pos << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(bucket_hash[j]) << " ";
+			// }
+			// cout << endl;
+
+			// cout << "lit: " << l << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(lit->second.data()[j]) << " ";
+			// }
+			// cout << endl;
+
+			// cout << "rit: " << r << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(rit->second.data()[j]) << " ";
+			// }
+			// cout << endl;
+
+			// cout << "reconstructed: " << bucket_pos << ": ";
+			// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+			// 	cout << (int)(tree_bucket_hash[j]) << " ";
+			// }
+			// cout << endl;
+			// cout << endl;
+		}
+
+		hash_map[bucket_pos] = vector<uint8_t>(tree_bucket_hash, tree_bucket_hash+SHA256_DIGEST_LENGTH);
+		delete[] tree_bucket_hash;
+	}
+
+	delete[] per_block_hash;
+	delete[] inner_mt;
+
+	// clear hash map
+	auto it = hash_map.upper_bound((1 << (oram_config.cached_levels + 1)) - 2);
+	hash_map.erase(it, hash_map.end());
+	// cout << "clear hash map key greater than: " << (1 << (oram_config.cached_levels + 1)) - 2 << endl;
+
+	// for(size_t i = (1 << oram_config.cached_levels) - 1; i < (1 << (oram_config.cached_levels + 1)) - 1; i++){
+	// 	vector<uint8_t> hash = hash_map[i];
+
+	// 	cout << "root_hash: " << i << ": ";
+	// 	for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+	// 		cout << (int)(hash[j]) << " ";
+	// 	}
+	// 	cout << endl;
+
+	// }
+
+	// assert(0);
+
+}
+
+void RemoteServerStorage::update_mt_reshuffle(const std::vector<int> &position, unsigned char* payload){
+
+	// cout << "update_mt_reshuffle" << endl;
+	// assert(0);
+
+	size_t num_buckets = position.size();
+	size_t num_blocks = num_buckets * oram_config.bucket_size;
+
+	// hash for each block
+	uint8_t* per_block_hash = new uint8_t[SHA256_DIGEST_LENGTH * num_blocks];
+
+	#pragma omp parallel for num_threads(NUM_THREADS)
+	for(size_t i = 0; i < num_blocks; i++){
+		sha256_wrapper(payload + i*SBucket::getCipherSize(), SBucket::getCipherSize(), per_block_hash + i*SHA256_DIGEST_LENGTH);
+
+		// cout << "bid: " << i << ": ";
+		// for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+		// 	cout << (int)((per_block_hash + i*SHA256_DIGEST_LENGTH)[j]) << " ";
+		// }
+		// cout << endl;
+	}
+
+	// assert(0);
+
+	// Merkle Trees for each bucket
+	size_t inner_mt_size = num_buckets * per_bucket_hashes * SHA256_DIGEST_LENGTH;
+	uint8_t* inner_mt = new uint8_t[inner_mt_size];
+	memset(inner_mt, 0, inner_mt_size);
+
+	// copy leaf hashes
+	size_t first_leaf_off = (per_bucket_hashes - 1) / 2;
+	for(size_t i = 0; i < num_buckets; i++){
+		uint8_t* src = per_block_hash + i * oram_config.bucket_size * SHA256_DIGEST_LENGTH;
+		uint8_t* dst = inner_mt + (i * per_bucket_hashes +  first_leaf_off) * SHA256_DIGEST_LENGTH;
+		memcpy(dst, src, oram_config.bucket_size * SHA256_DIGEST_LENGTH);
+	}
+
+	// reconstruct inner mt
+	for(size_t i = 0 ; i < num_buckets; i++){
+		for(size_t j = first_leaf_off; j >= 1; j--){
+			size_t id = j-1;
+			size_t lid = 2*j-1;
+			size_t rid = 2*j;
+
+			assert(lid <=  per_bucket_hashes - 1);
+
+			uint8_t* dst = inner_mt + (i * per_bucket_hashes + id)* SHA256_DIGEST_LENGTH;
+			uint8_t* lsrc = inner_mt + (i * per_bucket_hashes + lid)* SHA256_DIGEST_LENGTH;
+			uint8_t* rsrc = inner_mt + (i * per_bucket_hashes + rid)* SHA256_DIGEST_LENGTH;
+
+			sha256_twin_input_wrapper(
+				lsrc, SHA256_DIGEST_LENGTH,
+				rsrc, SHA256_DIGEST_LENGTH,
+				dst
+			);
+
+		}
+	}
+
+	for(size_t i = 0; i < num_buckets; i++){
+		int bucket_pos = position[i];
+
+		uint8_t* bucket_hash = inner_mt + i * per_bucket_hashes * SHA256_DIGEST_LENGTH;
+		reshuffle_inner_hash_map[bucket_pos] = vector<uint8_t>(bucket_hash, bucket_hash+SHA256_DIGEST_LENGTH);
+
+		int pos_iter = bucket_pos;
+		// loop ancestors
+		while(pos_iter >= (1 << oram_config.cached_levels) - 1){
+
+			if(pos_iter >= capacity / 2){
+				hash_map[pos_iter] = reshuffle_inner_hash_map[pos_iter];
+			} else{
+				int l = 2*pos_iter + 1;
+				int r = l + 1;
+				auto lit = hash_map.find(l);
+				auto rit = hash_map.find(r);
+				auto it = reshuffle_inner_hash_map.find(pos_iter);
+
+				if(lit == hash_map.end() || rit == hash_map.end() || it == reshuffle_inner_hash_map.end()){
+					// This shouldn't happen
+					assert(0);
+				}
+
+				uint8_t* tree_bucket_hash = new uint8_t[SHA256_DIGEST_LENGTH];
+
+				sha256_trib_input_wrapper(
+					it->second.data(), SHA256_DIGEST_LENGTH,
+					lit->second.data(), SHA256_DIGEST_LENGTH,
+					rit->second.data(), SHA256_DIGEST_LENGTH,
+					tree_bucket_hash
+				);
+
+				hash_map[pos_iter] = vector<uint8_t>(tree_bucket_hash, tree_bucket_hash+SHA256_DIGEST_LENGTH);
+
+				delete[] tree_bucket_hash;
+
+			}
+			pos_iter = (pos_iter - 1) / 2;
+		}
+	}
+
+	// clear hash map
+	auto it = hash_map.upper_bound((1 << (oram_config.cached_levels + 1)) - 2);
+	hash_map.erase(it, hash_map.end());
+	reshuffle_inner_hash_map.clear();
+	// cout << "clear hash map key greater than: " << (1 << (oram_config.cached_levels + 1)) - 2 << endl;
+
+	// for(size_t i = (1 << oram_config.cached_levels) - 1; i < (1 << (oram_config.cached_levels + 1)) - 1; i++){
+	// 	vector<uint8_t> hash = hash_map[i];
+
+	// 	cout << "root_hash: " << i << ": ";
+	// 	for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
+	// 		cout << (int)(hash[j]) << " ";
+	// 	}
+	// 	cout << endl;
+
+	// }
+
+	// assert(0);
 }
 
 void RemoteServerStorage::setCapacity(int totalNumOfBuckets, bool integrity = false) {
@@ -197,71 +981,72 @@ bool RemoteServerStorage::verify_and_insert(int pos, uint8_t* hash){
 }
 
 void RemoteServerStorage::sync_root(){
-	if(isServer){
-		io->send_data(root.data(), SHA256_DIGEST_LENGTH*sizeof(uint8_t));
-	} else{
-		io->recv_data(root.data(), SHA256_DIGEST_LENGTH*sizeof(uint8_t));
-		hash_map.insert(make_pair(0, root));
-	}
+	assert(0);
+	// if(isServer){
+	// 	io->send_data(roots.data(), SHA256_DIGEST_LENGTH*sizeof(uint8_t));
+	// } else{
+	// 	io->recv_data(roots.data(), SHA256_DIGEST_LENGTH*sizeof(uint8_t));
+	// 	hash_map.insert(make_pair(0, root));
+	// }
 }
 
 void RemoteServerStorage::insecureLoad(vector<Bucket>& input_bkts){
 	assert(0);
 
-	if(!isServer){
-		throw new runtime_error("insecureLoad is for server only");
-	}
-	cout << "Insecure loading... " << endl;
-	int per_block_size = (1 + block_size) * sizeof(int);
-	for(int i = 0; i < capacity; i++){
-		unsigned char* payload = new unsigned char[SBucket::getCipherSize()];
-		unsigned char* tmp = payload;
-		bool found = false;
-		for(Block& b : input_bkts[i].getBlocks()){
-			b.to_ptr(tmp);
-			tmp += per_block_size;
-		}
+	// if(!isServer){
+	// 	throw new runtime_error("insecureLoad is for server only");
+	// }
+	// cout << "Insecure loading... " << endl;
+	// int per_block_size = (1 + block_size) * sizeof(int);
+	// for(int i = 0; i < capacity; i++){
+	// 	unsigned char* payload = new unsigned char[SBucket::getCipherSize()];
+	// 	unsigned char* tmp = payload;
+	// 	bool found = false;
+	// 	for(Block& b : input_bkts[i].getBlocks()){
+	// 		b.to_ptr(tmp);
+	// 		tmp += per_block_size;
+	// 	}
 		
-		// Encrypt and write
-		int ctx_len = encrypt_wrapper(payload, per_block_size*Bucket::getMaxSize(), this->buckets[i]->data);
-		assert(ctx_len == SBucket::getCipherSize());
+	// 	// Encrypt and write
+	// 	int ctx_len = encrypt_wrapper(payload, per_block_size*Bucket::getMaxSize(), this->buckets[i]->data);
+	// 	assert(ctx_len == SBucket::getCipherSize());
 
-		// this->buckets[i]->from_ptr(payload);
+	// 	// this->buckets[i]->from_ptr(payload);
 
-		delete[] payload;
-	}
+	// 	delete[] payload;
+	// }
 
-	if(integrity){
-		cout << "Construct Merkle Tree... " << endl;
-		// Assume the oram tree is an binary tree
-		// , where 2*i for left child and 2*i + 1 for right child
+	// if(integrity){
+	// 	cout << "Construct Merkle Tree... " << endl;
+	// 	// Assume the oram tree is an binary tree
+	// 	// , where 2*i for left child and 2*i + 1 for right child
 
-		vector<bool> vt(capacity, false);
-		for(int i = capacity ; i >= 1; i--){
-			int id = i-1;
-			int lid = 2*i-1;
-			int rid = 2*i;
-			if(lid > capacity - 1){
-				// leaf node
-				int id = i-1;
-				sha256_wrapper(this->buckets[id]->data, SBucket::getCipherSize(), this->buckets[id]->hash);
-			} else{
-				// internal node
-				sha256_trib_input_wrapper(
-					this->buckets[id]->data, SBucket::getCipherSize(),
-					this->buckets[lid]->hash, SHA256_DIGEST_LENGTH,
-					this->buckets[rid]->hash, SHA256_DIGEST_LENGTH,
-					this->buckets[id]->hash
-				);
-			}
-		}
+	// 	vector<bool> vt(capacity, false);
+	// 	for(int i = capacity ; i >= 1; i--){
+	// 		int id = i-1;
+	// 		int lid = 2*i-1;
+	// 		int rid = 2*i;
+	// 		if(lid > capacity - 1){
+	// 			// leaf node
+	// 			int id = i-1;
+	// 			sha256_wrapper(this->buckets[id]->data, SBucket::getCipherSize(), this->buckets[id]->hash);
+	// 		} else{
+	// 			// internal node
+	// 			sha256_trib_input_wrapper(
+	// 				this->buckets[id]->data, SBucket::getCipherSize(),
+	// 				this->buckets[lid]->hash, SHA256_DIGEST_LENGTH,
+	// 				this->buckets[rid]->hash, SHA256_DIGEST_LENGTH,
+	// 				this->buckets[id]->hash
+	// 			);
+	// 		}
+	// 	}
 
-		for(int i = 0; i < SHA256_DIGEST_LENGTH; i++){
-			root[i] = this->buckets[0]->hash[i];
-		}
+	// 	for(int i = 0; i < SHA256_DIGEST_LENGTH; i++){
+	// 		root[i] = this->buckets[0]->hash[i];
+	// 	}
 
-	}
-	cout << "done... " << endl;
+	// }
+	// cout << "done... " << endl;
 }
 
 void RemoteServerStorage::insecureLoadPtr(int* bkts){
@@ -627,7 +1412,7 @@ void RemoteServerStorage::ReadBucketBatchAsBlock(const std::vector<int>& positio
 	delete[] payload;
 }
 
-void RemoteServerStorage::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, std::vector<bool> &valids){
+void RemoteServerStorage::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, std::vector<bool> &valids, bool isReshuffle){
 	if(isServer){
 		throw new runtime_error("Read/Write Bucket is for client only");
 	}
@@ -642,7 +1427,7 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRing(const std::vector<int>& posi
 
 	// cout << "ReadBlockBatchAsBlockRing: 1" << endl;
 	
-	int rt = ReadBatchBlock;
+	int rt = isReshuffle ? ReadBatchBlock_R : ReadBatchBlock;
 	io->send_data(&rt, sizeof(int));
 
 	size_t num_blocks = positions.size();
@@ -687,12 +1472,21 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRing(const std::vector<int>& posi
 	}
 
 	if(integrity){
-		recv_and_verify_hash(
-			positions,
-			offsets,
-			payload,
-			valids
-		);
+		if(!isReshuffle){
+			recv_and_verify_hash_bucket(
+				positions,
+				offsets,
+				payload,
+				valids
+			);
+		} else{
+			recv_and_verify_hash_reshuffle(
+				positions,
+				offsets,
+				payload,
+				valids
+			);
+		}
 	}
 
 	// cout << "ReadBlockBatchAsBlockRing: recv_data done" << endl;
@@ -701,7 +1495,6 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRing(const std::vector<int>& posi
 }
 
 void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, size_t num_real_blocks, std::vector<bool>& valids){
-	// long comm = io->counter;
 	if(isServer){
 		throw new runtime_error("Read/Write Bucket is for client only");
 	}
@@ -731,6 +1524,10 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& p
 
 	unsigned char* payload = new unsigned char[len];
 	unsigned char* ivs = new unsigned char[num_blocks*16];
+	unsigned char* dexor_payload;
+	if(integrity){
+		dexor_payload = new unsigned char[num_blocks * SBucket::getCipherSize()];
+	}
 
 	io->recv_data(payload, len);
 	io->recv_data(ivs, num_blocks*16);
@@ -743,12 +1540,22 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& p
 	#pragma omp parallel for num_threads(NUM_THREADS)
 	for(size_t block_id = 0; block_id < num_real_blocks; block_id++){
 		unsigned char* ctx_payload = payload + block_id * (SBucket::getCipherSize() - 16);
-
-
 		int valid_block_offset = -1;
-		for(int i = 0; i < num_blocks / num_real_blocks; i++){
 
+		// dummy block for de-xor
+		Block dummy_block(block_size);
+		for(int i = 0; i < num_blocks / num_real_blocks; i++){
 			size_t block_offset = block_id*(num_blocks / num_real_blocks) + i;
+
+			if(integrity){
+				// copy the ivs to dexor payload
+				memcpy(
+					dexor_payload + block_offset*SBucket::getCipherSize(),
+					ivs + block_offset*16, 
+					16
+				);
+			}
+
 			if(valids[block_offset]){
 				// Skip the valid block
 				assert(valid_block_offset == -1);
@@ -757,17 +1564,14 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& p
 				// Undo xor of dummies
 				unsigned char* dummy_ctx = new unsigned char[SBucket::getCipherSize()];
 				unsigned char* dummy_ptx = new unsigned char[SBucket::getCipherSize()];
-				// TODO: enable encrypt randomization here
-				Block* b = new Block(block_size);
-				b->to_ptr(dummy_ptx);
+				
+				dummy_block.to_ptr(dummy_ptx);
 				size_t ctx_len = encrypt_wrapper_with_iv(
 					ivs + block_offset*16, 
 					dummy_ptx, 
 					per_block_size*Bucket::getMaxSize(), 
 					dummy_ctx
 				);
-
-				delete b;
 
 				assert(ctx_len == SBucket::getCipherSize() - 16);
 
@@ -778,6 +1582,15 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& p
 				// }
 				// std::cout << std::endl;
 
+				if(integrity){
+					// copy the dummy ctx to dexor payload
+					memcpy(
+						dexor_payload + block_offset*SBucket::getCipherSize() + 16,
+						dummy_ctx, 
+						SBucket::getCipherSize() - 16
+					);
+				}
+
 				for(int j = 0; j < SBucket::getCipherSize() - 16; j++){
 					// de-xor
 					ctx_payload[j] = ctx_payload[j] ^ dummy_ctx[j];
@@ -786,6 +1599,15 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& p
 				delete[] dummy_ctx;
 				delete[] dummy_ptx;
 			}
+		}
+
+		if(integrity){
+			// copy the dummy ctx to dexor payload
+			memcpy(
+				dexor_payload + valid_block_offset*SBucket::getCipherSize() + 16,
+				ctx_payload, 
+				SBucket::getCipherSize() - 16
+			);
 		}
 
 		assert(valid_block_offset != -1);
@@ -806,71 +1628,71 @@ void RemoteServerStorage::ReadBlockBatchAsBlockRingXor(const std::vector<int>& p
 	}
 
 	if(integrity){
-		recv_and_verify_hash(
+		recv_and_verify_hash_2(
 			positions,
 			offsets,
-			payload,
+			dexor_payload,
 			valids
 		);
 	}
 
 	// cout << "ReadBlockBatchAsBlockRingXor - done."  << endl; 
-	// cout << io->counter - comm << " B; ";
-	delete[] payload;
+
 	delete[] ivs;
-}
-
-void RemoteServerStorage::ReadBucketBatchAsBlockRing(const std::vector<int>& positions, std::vector<Block*>& blocks, int bucket_size){
-	if(isServer){
-		throw new runtime_error("Read/Write Bucket is for client only");
-	}
-
-	if (!this->is_capacity_set) {
-		assert(0);
-		throw new runtime_error("Please call setCapacity before reading or writing any block");
-	}
-
-	// Here a trick is that for ring oram we consider each bucket with only one block
-	// For the sake of simple impelementation
-	
-	int rt = ReadBatch;
-	io->send_data(&rt, sizeof(int));
-
-	size_t num_buckets = positions.size();
-	io->send_data(&num_buckets, sizeof(size_t));
-	io->send_data(positions.data(), sizeof(int)*num_buckets);
-	// cout << "ReadBucketBatch num_buckets: " << num_buckets << endl;
-
-	size_t num_blocks = num_buckets * bucket_size;
-	size_t len =  num_blocks * (SBucket::getCipherSize());
-	// cout << "ReadBucketBatch allocate payload for size: " << len << endl;
-	unsigned char* payload = new unsigned char[len];
-	// cout << "ReadBucketBatch allocate done" << endl;
-
-	io->recv_data(payload, len);
-
-	size_t per_block_size = (1 + block_size) * sizeof(int);
-	blocks.resize(num_blocks);
-	
-	#pragma omp parallel for num_threads(NUM_THREADS)
-	for (int bucket_id = 0; bucket_id < positions.size(); bucket_id++) {
-		for(int block_id = 0; block_id < bucket_size; block_id++){
-
-			unsigned char* ctx_payload = payload + (bucket_id * bucket_size + block_id) * SBucket::getCipherSize();
-			unsigned char* ptx_payload = new unsigned char[SBucket::getCipherSize()];
-			size_t ptx_len = decrypt_wrapper(ctx_payload, SBucket::getCipherSize(), ptx_payload);
-			// assert(ptx_len == per_block_size*Bucket::getMaxSize());
-
-			Block* b = new Block(block_size);
-			b->from_ptr(ptx_payload);
-			blocks[bucket_id * bucket_size + block_id] = b;
-			// bkts.push_back(std::move(init_bkt));
-			delete[] ptx_payload;
-		}
-	}
-
 	delete[] payload;
 }
+
+// void RemoteServerStorage::ReadBucketBatchAsBlockRing(const std::vector<int>& positions, std::vector<Block*>& blocks, int bucket_size){
+// 	if(isServer){
+// 		throw new runtime_error("Read/Write Bucket is for client only");
+// 	}
+
+// 	if (!this->is_capacity_set) {
+// 		assert(0);
+// 		throw new runtime_error("Please call setCapacity before reading or writing any block");
+// 	}
+
+// 	// Here a trick is that for ring oram we consider each bucket with only one block
+// 	// For the sake of simple impelementation
+	
+// 	int rt = ReadBatch;
+// 	io->send_data(&rt, sizeof(int));
+
+// 	size_t num_buckets = positions.size();
+// 	io->send_data(&num_buckets, sizeof(size_t));
+// 	io->send_data(positions.data(), sizeof(int)*num_buckets);
+// 	// cout << "ReadBucketBatch num_buckets: " << num_buckets << endl;
+
+// 	size_t num_blocks = num_buckets * bucket_size;
+// 	size_t len =  num_blocks * (SBucket::getCipherSize());
+// 	// cout << "ReadBucketBatch allocate payload for size: " << len << endl;
+// 	unsigned char* payload = new unsigned char[len];
+// 	// cout << "ReadBucketBatch allocate done" << endl;
+
+// 	io->recv_data(payload, len);
+
+// 	size_t per_block_size = (1 + block_size) * sizeof(int);
+// 	blocks.resize(num_blocks);
+	
+// 	#pragma omp parallel for num_threads(NUM_THREADS)
+// 	for (int bucket_id = 0; bucket_id < positions.size(); bucket_id++) {
+// 		for(int block_id = 0; block_id < bucket_size; block_id++){
+
+// 			unsigned char* ctx_payload = payload + (bucket_id * bucket_size + block_id) * SBucket::getCipherSize();
+// 			unsigned char* ptx_payload = new unsigned char[SBucket::getCipherSize()];
+// 			size_t ptx_len = decrypt_wrapper(ctx_payload, SBucket::getCipherSize(), ptx_payload);
+// 			// assert(ptx_len == per_block_size*Bucket::getMaxSize());
+
+// 			Block* b = new Block(block_size);
+// 			b->from_ptr(ptx_payload);
+// 			blocks[bucket_id * bucket_size + block_id] = b;
+// 			// bkts.push_back(std::move(init_bkt));
+// 			delete[] ptx_payload;
+// 		}
+// 	}
+
+// 	delete[] payload;
+// }
 
 
 void RemoteServerStorage::WriteBucketBatch(const std::vector<int>& positions, const std::vector<Bucket>& bucket_to_write){
@@ -1063,54 +1885,55 @@ void RemoteServerStorage::WriteBucketBatchMapAsBlock(const std::map<int, vector<
 	io->send_data(payload, len);
 
 	if(integrity){
-		int hash_len = num_buckets * SHA256_DIGEST_LENGTH;
-		unsigned char* hash_payload = new unsigned char[hash_len];
+		assert(0);
+		// int hash_len = num_buckets * SHA256_DIGEST_LENGTH;
+		// unsigned char* hash_payload = new unsigned char[hash_len];
 
-		// Compute new hashes
-		for(int bucket_id = num_buckets - 1; bucket_id >= 0; bucket_id--){
-			int pos = positions[bucket_id];
+		// // Compute new hashes
+		// for(int bucket_id = num_buckets - 1; bucket_id >= 0; bucket_id--){
+		// 	int pos = positions[bucket_id];
 
-			uint8_t* hash = hash_payload + bucket_id * SHA256_DIGEST_LENGTH;
-			unsigned char* ctx_payload = payload + bucket_id * SBucket::getCipherSize();
-			if( pos >= capacity / 2){
-				// leaf
-				sha256_wrapper(ctx_payload, SBucket::getCipherSize(), hash);
-			} else{
-				// non-leaf
-				int l = 2*pos + 1;
-				int r = l + 1;
-				auto lit = hash_map.find(l);
-				auto rit = hash_map.find(r);
+		// 	uint8_t* hash = hash_payload + bucket_id * SHA256_DIGEST_LENGTH;
+		// 	unsigned char* ctx_payload = payload + bucket_id * SBucket::getCipherSize();
+		// 	if( pos >= capacity / 2){
+		// 		// leaf
+		// 		sha256_wrapper(ctx_payload, SBucket::getCipherSize(), hash);
+		// 	} else{
+		// 		// non-leaf
+		// 		int l = 2*pos + 1;
+		// 		int r = l + 1;
+		// 		auto lit = hash_map.find(l);
+		// 		auto rit = hash_map.find(r);
 
-				if(lit == hash_map.end() || rit == hash_map.end()){
-					// This shouldn't happen
-					assert(0);
-				}
-				sha256_trib_input_wrapper(
-					ctx_payload, SBucket::getCipherSize(),
-					lit->second.data(), SHA256_DIGEST_LENGTH,
-					rit->second.data(), SHA256_DIGEST_LENGTH,
-					hash
-				);
-			}
-			hash_map[pos] = vector<uint8_t>(hash, hash+SHA256_DIGEST_LENGTH);
-		}
+		// 		if(lit == hash_map.end() || rit == hash_map.end()){
+		// 			// This shouldn't happen
+		// 			assert(0);
+		// 		}
+		// 		sha256_trib_input_wrapper(
+		// 			ctx_payload, SBucket::getCipherSize(),
+		// 			lit->second.data(), SHA256_DIGEST_LENGTH,
+		// 			rit->second.data(), SHA256_DIGEST_LENGTH,
+		// 			hash
+		// 		);
+		// 	}
+		// 	hash_map[pos] = vector<uint8_t>(hash, hash+SHA256_DIGEST_LENGTH);
+		// }
 
-		io->send_data(hash_payload, hash_len);
-		delete[] hash_payload;
+		// io->send_data(hash_payload, hash_len);
+		// delete[] hash_payload;
 
-		// Reset the hash map
-		memcpy(root.data(), hash_map[0].data(), SHA256_DIGEST_LENGTH);
-		hash_map.clear();
-		hash_map.insert(make_pair(0, root));
+		// // Reset the hash map
+		// memcpy(roots.data(), hash_map[0].data(), SHA256_DIGEST_LENGTH);
+		// hash_map.clear();
+		// hash_map.insert(make_pair(0, root));
 	}
 
 	delete[] payload;
 }
 
-void RemoteServerStorage::WriteBucketBatchMapAsBlockRing(const std::map<int, vector<Block*>>& bucket_to_write, int bucket_size){
+void RemoteServerStorage::WriteBucketBatchMapAsBlockRing(const std::map<int, vector<Block*>>& bucket_to_write, int bucket_size, bool isReshuffle){
 	
-	int rt = WriteBatch;
+	int rt = isReshuffle ? WriteBatch_R : WriteBatch;
 	io->send_data(&rt, sizeof(int));
 
 	size_t num_buckets = bucket_to_write.size();
@@ -1125,9 +1948,11 @@ void RemoteServerStorage::WriteBucketBatchMapAsBlockRing(const std::map<int, vec
 	std::vector<int> positions;
 	size_t bucket_id = 0;
 	vector<vector<Block*>> bkts;
-	for (const auto& pair : bucket_to_write) {
-		positions.push_back(pair.first);
-		bkts.push_back(pair.second);
+
+	// reverse order!!!
+	for (auto it = bucket_to_write.rbegin(); it != bucket_to_write.rend(); ++it) {
+		positions.push_back(it->first);
+		bkts.push_back(it->second);
 	}
 
 	#pragma omp parallel for num_threads(NUM_THREADS)
@@ -1142,67 +1967,19 @@ void RemoteServerStorage::WriteBucketBatchMapAsBlockRing(const std::map<int, vec
 		}
 	}
 
+	
 	io->send_data(positions.data(), positions.size()*sizeof(int));
 	io->send_data(payload, len);
 
+
+	// TODO: this could be optimized
+	// Instead of sending the hashes, the server could just recompute by it self
 	if(integrity){
-
-        uint8_t* per_block_hash = new uint8_t[SHA256_DIGEST_LENGTH * num_blocks];
-		#pragma omp parallel for num_threads(NUM_THREADS)
-        for(size_t i = 0; i < num_blocks; i++){
-            sha256_wrapper(payload + i*SBucket::getCipherSize(), SBucket::getCipherSize(), per_block_hash + i*SHA256_DIGEST_LENGTH);
-        }
-
-		size_t hash_payload_size = num_buckets * per_bucket_hashes * SHA256_DIGEST_LENGTH;
-		uint8_t* hash_payload = new uint8_t[hash_payload_size];
-		memset(hash_payload, 0, hash_payload_size);
-
-		#pragma omp parallel for num_threads(NUM_THREADS)
-		for(size_t i = 0; i < num_buckets; i++){
-			for(size_t j = per_bucket_hashes; j >= 1; j--){
-                size_t id = j-1;
-                size_t lid = 2*j-1;
-                size_t rid = 2*j;
-                if(lid > per_bucket_hashes - 1){
-                    // leaf
-                    size_t offset = j - (per_bucket_hashes + 1) / 2;
-                    if(offset < bucket_size){
-                        uint8_t* src = per_block_hash + i * bucket_size * SHA256_DIGEST_LENGTH + offset * SHA256_DIGEST_LENGTH;
-                        uint8_t* dst = hash_payload + i * per_bucket_hashes * SHA256_DIGEST_LENGTH + id * SHA256_DIGEST_LENGTH;
-                        memcpy(dst, src, SHA256_DIGEST_LENGTH);
-                    }
-                } else{
-                    // internal node
-                    uint8_t* dst = hash_payload + i * per_bucket_hashes * SHA256_DIGEST_LENGTH + id * SHA256_DIGEST_LENGTH;
-                    uint8_t* lsrc = hash_payload + i * per_bucket_hashes * SHA256_DIGEST_LENGTH + lid * SHA256_DIGEST_LENGTH;
-                    uint8_t* rsrc = hash_payload + i * per_bucket_hashes * SHA256_DIGEST_LENGTH + rid * SHA256_DIGEST_LENGTH;
-
-                    sha256_twin_input_wrapper(
-                        lsrc, SHA256_DIGEST_LENGTH,
-                        rsrc, SHA256_DIGEST_LENGTH,
-                        dst
-                    );
-                }
-            }
-
-			// update local root
-			memcpy(
-				per_bucket_hash + positions[i]*SHA256_DIGEST_LENGTH,
-				hash_payload + i * per_bucket_hashes * SHA256_DIGEST_LENGTH,
-				SHA256_DIGEST_LENGTH
-			);
-
-			// cout << "update root for pos: " << positions[i] << ": " ;
-			// // for(int j = 0; j < SHA256_DIGEST_LENGTH; j++){
-			// // 	cout << (int)((per_bucket_hash + positions[i]*SHA256_DIGEST_LENGTH)[j]) << " ";
-			// // }
-			// cout << endl;
+		if(!isReshuffle){
+			update_mt(positions, payload);
+		} else{
+			update_mt_reshuffle(positions, payload);
 		}
-
-		io->send_data(hash_payload, hash_payload_size);
-
-		delete[] hash_payload;
-		delete[] per_block_hash;
 	}
 
 	delete[] payload;
@@ -1576,9 +2353,10 @@ void RemoteServerStorage::load(const char* fname){
     }
 
 	if(integrity){
-		for(int i = 0; i < SHA256_DIGEST_LENGTH; i++){
-			root[i] = this->buckets[0]->hash[i];
-		}
+		assert(0);
+		// for(int i = 0; i < SHA256_DIGEST_LENGTH; i++){
+		// 	root[i] = this->buckets[0]->hash[i];
+		// }
 	}
 
     close(fd);
@@ -1613,9 +2391,10 @@ void RemoteServerStorage::load_disk(const char* fname){
 	}
 
 	if(integrity){
-		for(int i = 0; i < SHA256_DIGEST_LENGTH; i++){
-			root[i] = this->buckets[0]->hash[i];
-		}
+		assert(0);
+		// for(int i = 0; i < SHA256_DIGEST_LENGTH; i++){
+		// 	root[i] = this->buckets[0]->hash[i];
+		// }
 	}
 
     close(fd);

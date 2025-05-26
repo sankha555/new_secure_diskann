@@ -54,7 +54,8 @@ int main(int argc, char** argv) {
         md.dummy_size, 
         md.evict_rate, 
         md.base_size,
-        md.num_levels
+        md.num_levels,
+        md.oram_cached_levels
     );
 
     Bucket::setMaxSize(1);

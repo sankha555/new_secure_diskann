@@ -233,7 +233,7 @@ class AlignedFileReader;
 namespace diskann
 {
 static const size_t MAX_SIZE_OF_STREAMBUF = 2LL * 1024 * 1024 * 1024;
-static bool debug = false;
+static bool debug = false; 
 
 inline void print_error_and_terminate(std::stringstream &error_stream)
 {

@@ -18,7 +18,7 @@ inline double interval(std::chrono::_V2::system_clock::time_point start){
 
 
 
-OramReadPathEviction::OramReadPathEviction(UntrustedStorageInterface* storage, RandForOramInterface* rand_gen,
+OramReadPathEviction::OramReadPathEviction(RemotePath* storage, RandForOramInterface* rand_gen,
                                            int block_size, int bucket_size, int num_blocks) {
     this->storage = storage;
     this->rand_gen = rand_gen;
@@ -38,7 +38,7 @@ OramReadPathEviction::OramReadPathEviction(UntrustedStorageInterface* storage, R
     Bucket::setMaxSize(bucket_size);
     this->rand_gen->setBound(num_leaves);
     // cout << "Set capacity" << endl; 
-    this->storage->setCapacity(num_buckets);
+    // this->storage->setCapacity(num_buckets);
     // cout << "Set capacity done" << endl; 
     this->position_map = vector<int>(num_blocks);
     // this->stash = vector<Block>();
@@ -268,7 +268,7 @@ std::vector<int*> OramReadPathEviction::batch_multi_access_swap(std::vector<Oper
     //     ((RemoteServerStorage*)storage)->WriteBucketBatchMap(evicted_storage);
     // }
 
-    // // std::cout << "stash size: " << mmstash.size() << std::endl;
+    std::cout << "stash size: " << mmstash.size() << std::endl;
 
     // return ret;
 }
@@ -281,13 +281,8 @@ std::vector<int*> OramReadPathEviction::batch_multi_access_swap_ro(std::vector<O
     {
         vector<int> leaves;
         // Generate fixed size leaves
-        printf("hello in oram\n");
-
         for(int blockIndex : blockIndices){
-            printf("hello in oram2\n");
             int oldLeaf = position_map[blockIndex];
-            printf("hello in oram3\n");
-
             // cout << "Need index: " << blockIndex << " oldleaf: " << oldLeaf << endl;
 
             if(leaves_cache.find(oldLeaf) == leaves_cache.end()){
@@ -337,7 +332,7 @@ std::vector<int*> OramReadPathEviction::batch_multi_access_swap_ro(std::vector<O
         // Batch read
         std::vector<Block*> blocks;
         // auto t_0 = std::chrono::high_resolution_clock::now();
-        ((RemoteServerStorage*)storage)->ReadBucketBatchAsBlock(positions, blocks);
+        storage->ReadBucketBatchAsBlock(positions, blocks);
         // t_read += interval(t_0);
 
         // Insert each block into stash
@@ -450,7 +445,7 @@ void OramReadPathEviction::evict_and_write_back(){
 
     // Batch Write
     // auto t_0 = std::chrono::high_resolution_clock::now();
-    ((RemoteServerStorage*)storage)->WriteBucketBatchMapAsBlock(evicted_storage);
+    storage->WriteBucketBatchMapAsBlock(evicted_storage);
     // t_write += interval(t_0);
 
     // cout << "ReadBucketTime: " << t_read << endl;

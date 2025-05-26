@@ -57,13 +57,16 @@ struct RingOramConfig{
     int num_buckets;
     int num_leaves;
 
-    RingOramConfig(int block_size, int real_bucket_size, int dummy_size, int evict_rate, int num_blocks, int num_levels)
+    int cached_levels;
+
+    RingOramConfig(int block_size, int real_bucket_size, int dummy_size, int evict_rate, int num_blocks, int num_levels, int cached_levels)
         : num_blocks(num_blocks), 
         dummy_size(dummy_size),
         real_bucket_size(real_bucket_size),
         evict_rate(evict_rate),
         num_levels(num_levels),
-        block_size(block_size)
+        block_size(block_size),
+        cached_levels(cached_levels)
         {
 
         std::cout << "> Ring Oram Config: " << std::endl;

@@ -22,6 +22,8 @@
 #include "node.h"
 #include "OramAPI.h"
 
+#define NUM_THREADS 32
+
 using namespace std;
 // using namespace diskann;
 
