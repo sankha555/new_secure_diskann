@@ -18,6 +18,7 @@ struct Metadata {
     int evict_rate;
     int num_levels;
     int oram_cached_levels;
+    int large_number;
     bool use_oram;
     bool debug;
 

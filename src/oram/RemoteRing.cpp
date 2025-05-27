@@ -106,6 +106,7 @@ void RemoteRing::load_server_state(const char* fname){
 	// Read capacity
 	int c;
 	read(fd, &c, sizeof(int));
+	cout << c << " " << capacity << "\n";
 	if(c != capacity){
 		assert(0);
 	}

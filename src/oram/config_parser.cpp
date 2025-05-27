@@ -86,6 +86,13 @@ int parseJson(string config_path, Metadata &md, string dataset){
             return 1;
         }
 
+        if(val.HasMember("large_number") && val["large_number"].IsInt()){
+            md.large_number = val["large_number"].GetInt();
+        } else{
+            cerr << "Parse error: large_number not found or invalid format" << endl;
+            return 1;
+        }
+
         if(val.HasMember("use_oram") && val["use_oram"].IsBool()){
             md.use_oram = val["use_oram"].GetBool();
         } else{

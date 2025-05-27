@@ -129,6 +129,7 @@ int main(int argc, char **argv) {
         md.metadata_path,
         md.pos_map_path,
         md.debug,
+        md.large_number,
         config
     );
 

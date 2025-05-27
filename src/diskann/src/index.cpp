@@ -1544,10 +1544,28 @@ void Index<T, TagT, LabelT>::build_with_data_populated(const std::vector<TagT> &
     generate_frozen_point();
     link();
 
+    FILE* file = std::fopen("/home/azureuser/sankha/new_secure_diskann/data/graphs/laion100k/graph.txt", "w");  // Open file for writing
+
+    if (!file) {
+        std::perror("File opening failed");
+    }
+
+    diskann::cout << "Writing index to graph\n";
+
     size_t max = 0, min = SIZE_MAX, total = 0, cnt = 0;
     for (size_t i = 0; i < _nd; i++)
     {
         auto &pool = _graph_store->get_neighbours((location_t)i);
+        printf("Hello\n");
+
+        std::string text = std::to_string(i) + " " + std::to_string(pool.size()) + " ";
+        for (const auto &neighbor : pool){
+            text += std::to_string(neighbor) + " ";
+        }
+        text += "\n";
+        fprintf(file, "%s", text.c_str());
+        printf("Hi\n");
+
         max = std::max(max, pool.size());
         min = std::min(min, pool.size());
         total += pool.size();

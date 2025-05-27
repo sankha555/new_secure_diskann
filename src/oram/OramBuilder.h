@@ -32,6 +32,8 @@ class OramBuilder {
 
     public:
 
+    float large_number = 1;
+
     const char* buckets_path;
     const char* block_map_path;
     const char* position_map_path;
@@ -49,13 +51,15 @@ class OramBuilder {
         const char* position_map_path,
         const char* metadata_path,
         node_id_t num_points,
+        const float large_number,
         RingOramConfig* config
     ) {
         this->buckets_path = buckets_path;
         this->block_map_path = block_map_path;
         this->position_map_path = position_map_path;
         this->metadata_path = metadata_path;
-    
+        this->large_number = large_number;
+
         this->config = config;
         this->random = new RandomForOram();
         this->block_fetcher = new FakeBlockFetcherRing<T, LabelT>(num_points, *config, this->random);
@@ -116,9 +120,13 @@ class OramBuilder {
             
             vector<T> coords;
             for(size_t offset = node_id*dim; offset < (node_id+1)*dim; offset++){
-                coords.push_back(database[offset]);
+                coords.push_back(database[offset]*large_number);
             }
             oram_node->set_coords(coords);
+
+            if(oram_node->get_id() == 8124){
+                oram_node->print_node_info();
+            }
 
             // oram_node->print_node();
 

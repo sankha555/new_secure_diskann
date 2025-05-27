@@ -69,18 +69,20 @@ struct DiskANNNode {
         diskann_aligned_data = (char*) malloc(len * sizeof(T));
     }
 
-    DiskANNNode(T* input){
+    DiskANNNode(T* input, float large_number){
         len = dim + 1 + n_neighbors; // coords | n_nbrs | nbr_ids
 
         data.resize(len);
         memcpy(data.data(), input, len*sizeof(T));
 
+        for(int i = 0; i < dim; i++){
+            data[1 + n_neighbors + i] /= large_number;  // scale the coordinates
+        }
 
         diskann_aligned_data = (char*) malloc(len * sizeof(T));
 
         // copy node_coords
         memcpy(diskann_aligned_data, data.data() + 1 + n_neighbors, dim*(sizeof(T)/sizeof(char)));  // skip node_id and n_nbrs
-
 
         // copy the neighbour ids
         // find num_nbrs 
@@ -106,6 +108,7 @@ struct DiskANNNode {
         memcpy(diskann_aligned_data + dim*sizeof(T), &num_actual_nbrs, 1*sizeof(T));
 
         this->node_id = (LabelT) data[0];
+
     }
 
 
@@ -113,6 +116,22 @@ struct DiskANNNode {
         if(diskann_aligned_data != NULL){
             free(diskann_aligned_data);
         }
+    }
+
+    void print_node_info(){
+        cout << "Node ID: " << node_id << endl;
+        cout << "Neighbors: ";
+        for(int i = 0; i < n_neighbors; i++){
+            if(data[1 + i] >= 0){
+                cout << data[1 + i] << " ";
+            }
+        }
+        cout << endl;
+        cout << "Coordinates: ";
+        for(int i = 0; i < dim; i++){
+            cout << data[1 + n_neighbors + i] << " ";
+        }
+        cout << endl << endl;
     }
 
     int get_int_size(){
@@ -190,6 +209,7 @@ class OramAPI {
     vector<int> node_to_block;
     bool debug;
     int oram_calls = 0;
+    float large_number;
 
     OramAPI(
         RemoteRing* rss,
@@ -205,6 +225,7 @@ class OramAPI {
         string metadata_path,
         string pos_map_path,
         bool debug,
+        float large_number,
         RingOramConfig config
     ){
         oram = new OramRing(
@@ -218,6 +239,7 @@ class OramAPI {
         );
 
         this->debug = debug;
+        this->large_number = large_number;
 
         if (debug) printf("Loading ORAM metadata\n");
         ((OramRing*)oram)->loadMetaDataFromFile(metadata_path.c_str());
@@ -293,7 +315,7 @@ class OramAPI {
 
         vector<DiskANNNode<T, LabelT>*> nodes;
         for(int i = 0; i < real_accesses; i++){
-            DiskANNNode<T, LabelT>* node = new DiskANNNode<T, LabelT>(fetched_blocks[i]);
+            DiskANNNode<T, LabelT>* node = new DiskANNNode<T, LabelT>(fetched_blocks[i], large_number);
             nodes.push_back(node);
 
             delete fetched_blocks[i];

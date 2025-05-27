@@ -45,8 +45,8 @@ int main(int argc, char** argv) {
 
     cout << "Configuration loaded successfully." << endl;
 
-    DiskANNNode<float, node_id_t>::dim = 128;
-    DiskANNNode<float, node_id_t>::n_neighbors = 128;
+    DiskANNNode<float, node_id_t>::dim = md.dim;
+    DiskANNNode<float, node_id_t>::n_neighbors = md.M;
 
     struct RingOramConfig config(
         md.block_size, 
@@ -67,6 +67,7 @@ int main(int argc, char** argv) {
         md.pos_map_path.c_str(),
         md.metadata_path.c_str(),
         md.base_size,
+        md.large_number,
         &config
     );
 
@@ -75,7 +76,8 @@ int main(int argc, char** argv) {
     float* database = fvecs_read(md.base_path.c_str(), &dim, &nb);
     assert((node_id_t) nb == (node_id_t) md.base_size);
 
-    string index_path = GRAPHS_DIR + "graph.txt";
+    string index_path = GRAPHS_DIR + dataset + "/graph.txt";
+    cout << "Initializing ORAM from " << index_path << "\n";
     oram_builder->load_index(index_path.c_str());
     oram_builder->initiate_and_write_blocks(database, md.block_size);
 

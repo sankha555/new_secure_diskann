@@ -1307,7 +1307,6 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
                                                  const uint32_t io_limit, const bool use_reorder_data,
                                                  QueryStats *stats)
 {
-
     uint64_t num_sector_per_nodes = DIV_ROUND_UP(_max_node_len, defaults::SECTOR_LEN);
     if (beam_width > num_sector_per_nodes * defaults::MAX_N_SECTOR_READS)
         throw ANNException("Beamwidth can not be higher than defaults::MAX_N_SECTOR_READS", -1, __FUNCSIG__, __FILE__,
@@ -1461,6 +1460,7 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
     //diskann::cout<<"Search IO Limit: "<<io_limit<<std::endl;
     while(num_fixed_hops < io_limit)
     {
+        stats->num_search_iterations++;
         // clear iteration state
         frontier.clear();
         frontier_nhoods.clear();
@@ -1469,7 +1469,7 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
         sector_scratch_idx = 0;
         // find new beam
         uint32_t num_seen = 0;
-        while (retset.has_unexpanded_node() && frontier.size() < beam_width && num_seen < beam_width)
+        while (retset.has_unexpanded_node() && frontier.size() < beam_width)
         {
             auto nbr = retset.closest_unexpanded();
             num_seen++;
@@ -1550,6 +1550,8 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
             {
                 stats->io_us += (float)io_timer.elapsed();
             }
+        } else {
+            reader->read(frontier_read_reqs, ctx); // synchronous IO linux
         }
 
         num_fixed_hops++;
@@ -1646,6 +1648,7 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
 
             cpu_timer.reset();
             // process prefetch-ed nhood
+            std::vector<std::pair<float, int>> neigbours;
             for (uint64_t m = 0; m < nnbrs; ++m)
             {
                 uint32_t id = node_nbrs[m];
@@ -1665,9 +1668,21 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
                     //}
 
                     Neighbor nn(id, dist);
+                    neigbours.push_back({dist, id});
                     retset.insert(nn);
                 }
             }
+
+            std::sort(neigbours.begin(), neigbours.end());
+            int z = 0;
+            for(auto ngb:neigbours){
+                // if(z == 10){
+                //     break;
+                // }
+                // cout << "(" << ngb.second << "," << ngb.first << ") ";
+                z++;
+            }
+            // cout << "\n";
 
             if (stats != nullptr)
             {
@@ -1676,6 +1691,7 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
         }
 
         hops++;
+        // cout << "\n";
     }
 
     uint64_t max_hops = 0;
@@ -1742,7 +1758,9 @@ void OramIndex<T, LabelT>::oram_read(
     vector<node_id_t> node_ids;
     for (auto &node : frontier_nhoods) {
         node_ids.push_back((node_id_t)node.first);
+        // cout << node.first << " ";
     }
+    // cout << "\n";
     
     auto s = std::chrono::high_resolution_clock::now();    
     vector<DiskANNNode<T, LabelT>*> fetched_nodes = oram->oram_access<T, LabelT>(node_ids, beam_width);
@@ -1764,6 +1782,9 @@ void OramIndex<T, LabelT>::oram_read(
             cout << "Node not found in map: " << node_id << endl;
             abort();
         }
+
+        // print node information
+        // node->print_node_info();
 
         memcpy(frontier_nhoods[i].second, node->get_diskann_aligned_data(), (node->get_int_size())*sizeof(T));
         delete node;
@@ -1943,7 +1964,7 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
 
         // find new beam
         uint32_t num_seen = 0;
-        while (retset.has_unexpanded_node() && frontier.size() < beam_width && num_seen < beam_width)
+        while (retset.has_unexpanded_node() && frontier.size() < beam_width)
         {
             auto nbr = retset.closest_unexpanded();
             num_seen++;
@@ -2007,6 +2028,7 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
                 stats->io_us += (float)io_timer.elapsed();
             }
         } else {
+            // cout << "Frontier is empty\n";
             // even if frontier is empty, I need to make an oram access for security
             oram_read(frontier_nhoods, oram, beam_width, stats);
         }
@@ -2071,9 +2093,11 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
 
         for (auto &frontier_nhood : frontier_nhoods)
         {
+            // cout << frontier_nhood.first << " ";
             char *node_disk_buf = frontier_nhood.second;
 
             int dim = DiskANNNode<T, LabelT>::dim;
+            // cout << "Dim = " << dim << "\n";
             int n_neighbours = DiskANNNode<T, LabelT>::n_neighbors;
             int node_info_len = dim + 1 + n_neighbours;
 
@@ -2081,10 +2105,17 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
             vector<T> node_comps(node_info_len);
             for(int i = 0; i < node_info_len; i++){
                 node_comps[i] = ptr[i];
+                // cout << node_comps[i] << " ";
             }
+            // cout << "\n";
 
             uint32_t *node_buf = offset_to_node_nhood(node_disk_buf);
-            uint64_t nnbrs = (uint64_t)(node_comps[n_neighbours]);
+            // for(int i = 0; i < 129; i++){
+            //     cout << node_buf[i] << " ";
+            // }
+            // cout << "\n";
+            uint64_t nnbrs = (uint64_t)(node_comps[dim]);
+            // cout << "Num nbrs = " << nnbrs << "\n";
 
             T *node_fp_coords = offset_to_node_coords(node_disk_buf);
             memcpy(data_buf, node_fp_coords, dim*sizeof(T));
@@ -2103,7 +2134,9 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
             uint32_t node_nbrs[n_neighbours];
             for(int i = 0; i < nnbrs; i++){
                 node_nbrs[i] = (uint32_t) node_comps[dim + 1 + i];
+                // cout << node_nbrs[i] << " ";
             }
+            // cout << "\n";
 
             // compute node_nbrs <-> query dist in PQ space
             cpu_timer.reset();
@@ -2116,6 +2149,8 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
 
             cpu_timer.reset();
             // process prefetch-ed nhood
+
+            std::vector<std::pair<float, int>> neigbours;
             for (uint64_t m = 0; m < nnbrs; ++m)
             {
                 uint32_t id = node_nbrs[m];
@@ -2131,9 +2166,21 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
                     float dist = dist_scratch[m];
 
                     Neighbor nn(id, dist);
+                    neigbours.push_back({dist, id});
                     retset.insert(nn);
                 }
             }
+
+            std::sort(neigbours.begin(), neigbours.end());
+            int z = 0;
+            for(auto ngb:neigbours){
+                // if(z == 10){
+                //     break;
+                // }
+                // cout << "(" << ngb.second << "," << ngb.first << ") ";
+                z++;
+            }
+            // cout << "\n";
 
             if (stats != nullptr)
             {
@@ -2142,6 +2189,7 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
         }
 
         hops++;
+        // cout << "\n";
     }
 
     uint64_t max_hops = 0;
