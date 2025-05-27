@@ -1556,7 +1556,6 @@ void Index<T, TagT, LabelT>::build_with_data_populated(const std::vector<TagT> &
     for (size_t i = 0; i < _nd; i++)
     {
         auto &pool = _graph_store->get_neighbours((location_t)i);
-        printf("Hello\n");
 
         std::string text = std::to_string(i) + " " + std::to_string(pool.size()) + " ";
         for (const auto &neighbor : pool){
@@ -1564,7 +1563,6 @@ void Index<T, TagT, LabelT>::build_with_data_populated(const std::vector<TagT> &
         }
         text += "\n";
         fprintf(file, "%s", text.c_str());
-        printf("Hi\n");
 
         max = std::max(max, pool.size());
         min = std::min(min, pool.size());

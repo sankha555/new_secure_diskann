@@ -7,8 +7,9 @@ pip3 install google-cloud-storage google-cloud-compute paramiko gdown
 pip3 install tcconfig 
 
 
-
-mkdir data
+mkdir data/datasets
+mkdir data/index
+mkdir data/graphs
 mkdir results
 mkdir oram_data
 
@@ -19,3 +20,4 @@ cmake -DCMAKE_BUILD_TYPE=Release .. && make -Bj
 
 # come back to root
 cd ../../..
+
