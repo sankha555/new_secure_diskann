@@ -199,7 +199,7 @@ struct DiskANNInterface {
                         stats + i
                     );
                 }
-                cout << "\n";
+                // cout << "\n";
 
                 if (query_nums.count(i+1)){
                     
