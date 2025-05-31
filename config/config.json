@@ -73,8 +73,43 @@
       "--query_file": "data/datasets/laion100k/laion_query.fbin",
       "--gt_file": "data/datasets/laion100k/laion_query_base_gt100",
       "--result_path": "results/laion100k"
-  }
+  },
+
+  "trip": {
+      "debug": false,
+      "integrity": false,
+      "base_size": 1523871,
+      "dummy_size": 64,
+      "real_bucket_size": 32,
+      "evict_rate": 36, 
+      "num_levels": 16,
+      "oram_cached_levels": 6, 
+      "block_size": 1026,
+      "large_number": 1,
+      "use_oram": false,
+
+      "buckets_path": "../compass/data/snap/server/trip/buckets.bin",
+      "graph_cache_path": "../compass/data/snap/client/trip/graph_cache.bin",
+      "hash_path": "../compass/data/snap/client/trip/hash.bin",
+      "metadata_path": "../compass/data/snap/client/trip/metadata.bin",
+      "pos_map_path": "../compass/data/snap/client/trip/position_map.bin",
+      "block_map_path": "../compass/data/snap/client/trip/block_mapping.bin",
+
+      "--data_type": "float",
+      "--dist_fn": "l2",
+      "dim": 768,
+      "M": 128, 
+      "-W": 4,
+      "-K": 10,
+      "-L": 45,
+      "--search_io_limit": 100,
+      "--num_nodes_to_cache": 0,
+      "--query_nums": 1000,
+
+      "--index_path_prefix": "data/index/trip/disk_index_trip_base_R128_L50_A1.2",
+      "base_path": "../compass/data/dataset/trip_distilbert/passages.fvecs",
+      "--query_file": "data/dataset/trip/queries.fbin",
+      "--gt_file": "data/dataset/trip/trip_query_base_gt_100",
+      "--result_path": "results/trip"
+    }
 }
-
-
-
