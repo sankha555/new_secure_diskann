@@ -2,7 +2,7 @@ import subprocess
 import os
 from rich import print
 
-project_root = "/home/azureuser/sandhya/new_secure_diskann"
+project_root = "/home/azureuser/sankha/new_secure_diskann"
 
 # double-check this once
 dataset_sizes = {
@@ -289,6 +289,7 @@ def log_search_results(client_output, dataset, r, efc, ef, w, iterations):
     
     result_parts = result_line.split('|')
     
+    num_queries = result_parts[2].strip()
     recall_at_10 = result_parts[3].strip()
     mrr_at_10 = result_parts[4].strip()
     hops = result_parts[6].strip()
@@ -296,6 +297,7 @@ def log_search_results(client_output, dataset, r, efc, ef, w, iterations):
     # log into log file
     result_json = {
         "Dataset": dataset,
+        "Num Queries": int(float(num_queries)),
         
         # index hyperparameters
         "Degree": r,
@@ -308,9 +310,9 @@ def log_search_results(client_output, dataset, r, efc, ef, w, iterations):
         "Beam Width": w,
         
         # search results
-        "Recall@10": recall_at_10,
-        "MRR@10": mrr_at_10,
-        "Hops": hops
+        "Recall@10": float(recall_at_10),
+        "MRR@10": float(mrr_at_10),
+        "Hops": float(hops)
     }
     
     import json
@@ -331,7 +333,7 @@ def run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterat
     #     print("Exiting without running search.")
     #     exit(0)
     
-    ef_range = [(i * 0.2 * efc) for i in range(1, 6)]
+    ef_range = [int(i * 0.2 * efc) for i in range(1, 6)]
     print(ef_range)
     for ef in ef_range:
         for w in w_range:
@@ -346,11 +348,10 @@ datasets = ["sift"]
 # index hyperparameters
 r_range = [128, 256, 512]
 efc_ranges = {
-    128: [100],         # [20, 40, 60, 80, 100]
-    256: [200],         # [40, 80, 120, 160, 200]
+    128: [100],         
+    256: [200],         
     512: [400]
 }
-# efc_range = [100, 200, 400]
 alpha_range = [1.2]
 
 # search hyperparameters
