@@ -2,7 +2,7 @@ import subprocess
 import os
 from rich import print
 
-project_root = "/home/azureuser/sankha/new_secure_diskann"
+project_root = "/home/azureuser/sandhya/new_secure_diskann"
 
 # double-check this once
 dataset_sizes = {
