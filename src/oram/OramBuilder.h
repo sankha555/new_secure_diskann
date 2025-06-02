@@ -143,6 +143,7 @@ class OramBuilder {
     }
 
     void initiate_and_write_blocks(T* database, int block_size) {
+        cout << "Using in-memory initiation\n";
         FILE* f = fopen(buckets_path, "w");
         if (!f) {
             fprintf(stderr, "could not open %s\n", buckets_path);
@@ -263,6 +264,150 @@ class OramBuilder {
         }
 
     }
+};
+
+template<typename T, typename LabelT>
+class OramBuilderDisk : public OramBuilder<T, LabelT> {
+    public:
+
+    OramBuilderDisk(
+        const char* buckets_path,
+        const char* block_map_path,
+        const char* position_map_path,
+        const char* metadata_path,
+        node_id_t num_points,
+        const float large_number,
+        RingOramConfig* config
+    ) : OramBuilder<T, LabelT>(buckets_path, block_map_path, position_map_path, metadata_path, num_points, large_number, config) {
+        // Initialize the block fetcher with disk access
+        cout << "Initiating on-disk ORAM" << endl;
+        this->block_fetcher = new FakeBlockFetcherRing<T, LabelT>(num_points, *config, this->random);
+    }
+
+
+    void initiate_and_write_blocks(T* database, int block_size) {
+        cout << "Using on-disk initiation\n";
+
+        this->insert_real_blocks(database);
+        delete[] database;
+
+        int per_block_size = (1 + this->config->block_size) * sizeof(int);
+
+        bool integrity = false;
+
+        std::vector<SBucket*> buckets;
+        buckets.resize(this->config->num_buckets * this->config->bucket_size);
+
+        vector<block_id_t> block_ids;
+        block_ids.resize(this->config->num_buckets * this->config->bucket_size);
+
+        cout << "-> Encrypting ORAM Tree..." << endl;
+        #pragma omp parallel for num_threads(NUM_THREADS)
+        for(int i = 0; i < this->config->num_buckets; i++){
+            // fill in the real blocks
+            for(int j = 0; j < this->config->real_bucket_size; j++){
+                SBucket* sbkt = new SBucket(integrity);
+                Bucket* bkt = this->block_fetcher->bkts[i*this->config->real_bucket_size + j];
+
+                unsigned char* payload = new unsigned char[SBucket::getCipherSize()];
+
+                vector<Block> blocks = bkt->getBlocks();
+                assert(blocks.size() == 1);
+                
+                blocks[0].to_ptr(payload);
+                block_ids[i*this->config->bucket_size + j] = blocks[0].index;
+
+                // Encrypt and write
+                int ctx_len = encrypt_wrapper(payload, per_block_size*Bucket::getMaxSize(), sbkt->data);
+                
+                buckets[i*this->config->bucket_size + j] = sbkt;
+                assert(ctx_len == SBucket::getCipherSize());
+                delete bkt;
+                delete[] payload;
+            }
+
+            // fill in the dummy blocks
+            for(int j = this->config->real_bucket_size; j < this->config->bucket_size; j++){
+                SBucket* sbkt = new SBucket(integrity);
+                unsigned char* payload = new unsigned char[SBucket::getCipherSize()];
+                Block dummy = Block(block_size);
+                dummy.to_ptr(payload);
+                
+                block_ids[i*this->config->bucket_size + j] = -1;
+                int ctx_len = encrypt_wrapper(payload, per_block_size*Bucket::getMaxSize(), sbkt->data);
+            
+                buckets[i*this->config->bucket_size + j] = sbkt;
+                assert(ctx_len == SBucket::getCipherSize());
+                delete[] payload;
+            }
+        }
+
+        assert(block_ids.size() == this->config->num_buckets * this->config->bucket_size);
+
+        cout << "Saving block mapping..." << endl;
+        this->block_fetcher->save_block_mapping(this->block_map_path);
+
+        cout << "Saving position mapping..." << endl;
+        this->block_fetcher->save_position_map(this->position_map_path);
+
+
+        // Save metadata
+        {
+            cout << "Saving metadata..." << endl;
+            int s = block_ids.size();
+            FILE* f = fopen(this->metadata_path, "w");
+            if (!f) {
+                fprintf(stderr, "could not open %s\n", this->metadata_path);
+                perror("");
+                abort();
+            }
+            fwrite(&s, 1, sizeof(int), f);
+            fwrite(block_ids.data(), 1, block_ids.size()*sizeof(int), f);
+            fclose(f);
+        }
+
+        // Save buckets, one file per path
+        {
+            for(size_t i = 0; i < this->config->num_buckets; i++){
+                // cout << "Saving bucket " << i << endl;
+
+                string bucket_file_path = std::string(this->buckets_path) +  "/bucket_" + std::to_string(i) + ".bin";
+
+                FILE* f = fopen(bucket_file_path.c_str(), "w");
+                if (!f) {
+                    fprintf(stderr, "could not open %s\n", bucket_file_path.c_str());
+                    perror("");
+                    abort();
+                }
+
+                // Write capacity
+                // fwrite(&(this->config->num_buckets), 1, sizeof(int), f);
+
+                int sb_size = SBucket::getCipherSize();
+                // fwrite(&sb_size, 1, sizeof(int), f);
+
+                // fwrite(&integrity, 1, sizeof(bool), f);       // not using integrity
+
+                for(size_t j = 0; j < this->config->bucket_size; j++){
+                    size_t total_written = 0;
+                    size_t bytes_to_write = SBucket::getCipherSize();
+                    while (total_written < bytes_to_write) {
+                        size_t written = fwrite(buckets[i*this->config->bucket_size + j]->data, 1, bytes_to_write - total_written, f);
+                        if (written == 0) {
+                            if (ferror(f)) {
+                                perror("Write error");
+                                break;
+                            }
+                        }
+                        total_written += written;
+                    }
+                }
+                fclose(f);
+            }
+        }
+
+    }
+
 };
 
 #endif

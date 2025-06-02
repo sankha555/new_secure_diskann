@@ -607,9 +607,10 @@ void OramRing::evict_and_write_back(){
             auto it = mmstash.find(make_pair(position_map[idx], idx));
             if (it == mmstash.end()){
                 mmstash[make_pair(position_map[idx], idx)] = b;
-            } else{
-                assert(0);
-            }
+            } //else{
+                // cout << "Block id = " << idx << endl;
+                // assert(0);
+            // }
         } else{
             delete b;
         }

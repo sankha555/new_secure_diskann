@@ -12,7 +12,7 @@ def download_public_bucket(bucket_name, destination_dir):
 
         # Check if file already exists locally
         if not os.path.exists(dest_file_path):
-            if not "laion" in dest_file_path:
+            if not "marco" in dest_file_path:
                 continue
             print(f"Downloading {blob.name}...")
             blob.download_to_filename(dest_file_path)

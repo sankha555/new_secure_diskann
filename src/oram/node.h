@@ -959,4 +959,8 @@ class FakeBlockFetcherRing : public BlockFetcher<T, LabelT>{
         }
     }
 
+    size_t get_posmap_size(){
+        return graph_position_map.size();
+    }
+
 };

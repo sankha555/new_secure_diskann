@@ -10,7 +10,7 @@
       "oram_cached_levels": 4, 
       "block_size": 258,
       "large_number": 1,
-      "use_oram": false,
+      "use_oram": true,
 
       "buckets_path": "oram_data/sift/buckets.bin",
       "graph_cache_path": "oram_data/sift/graph_cache.bin",
@@ -28,7 +28,7 @@
       "-L": 32,
       "--search_io_limit": 10,
       "--num_nodes_to_cache": 0,
-      "--query_nums": 10000,
+      "--query_nums": 100,
 
       "--index_path_prefix": "data/index/sift/disk_index_sift_base_R128_L50_A1.2",
       "base_path": "data/datasets/sift/base.fvecs",
@@ -73,7 +73,74 @@
       "--query_file": "data/datasets/laion100k/laion_query.fbin",
       "--gt_file": "data/datasets/laion100k/laion_query_base_gt100",
       "--result_path": "results/laion100k"
-  }
+  },
+
+  "sift_disk": {
+      "debug": false,
+      "integrity": false,
+      "base_size": 1000000,
+      "dummy_size": 64,
+      "real_bucket_size": 32,
+      "evict_rate": 36, 
+      "num_levels": 16,
+      "oram_cached_levels": 4, 
+      "block_size": 258,
+      "large_number": 1,
+      "use_oram": true,
+
+      "buckets_path": "oram_data/sift/buckets.bin",
+      "graph_cache_path": "oram_data/sift/graph_cache.bin",
+      "hash_path": "oram_data/sift/hash.bin",
+      "metadata_path": "oram_data/sift/metadata.bin",
+      "pos_map_path": "oram_data/sift/position_map.bin",
+      "block_map_path": "oram_data/sift/block_mapping.bin",
+
+      "--data_type": "float",
+      "--dist_fn": "l2",
+      "dim": 128,
+      "M": 128, 
+      "-W": 4,
+      "-K": 10,
+      "-L": 32,
+      "--search_io_limit": 10,
+      "--num_nodes_to_cache": 0,
+      "--query_nums": 1000,
+
+      "--index_path_prefix": "data/index/sift/disk_index_sift_base_R128_L50_A1.2",
+      "base_path": "data/datasets/sift/base.fvecs",
+      "--query_file": "data/datasets/sift/sift_query.fbin",
+      "--gt_file": "data/datasets/sift/sift_query_base_gt100",
+      "--result_path": "results/sift"
+  },
+
+  "msmarco": {
+        "integrity": false,
+        "base_size": 8841823,
+        "dummy_size": 64,
+        "real_bucket_size": 32,
+        "evict_rate": 36, 
+        "num_levels": 19,
+        "oram_cached_levels": 6, 
+        "block_size": 1026,
+        "dim": 768,
+        "ef_spec": 8,
+        "ef_neighbor": 24,
+        "ef_search": 48,
+        "M": 128, 
+        "ef_lowest_cached_layer": 2,
+        "ef_upper_steps": 1, 
+        "index_path": "../data/dataset/msmarco_bert/hnsw_128_200_2_ip.index",
+        "pq_path": "../data/dataset/msmarco_bert/pq_full_32_ip.index",
+        "base_path": "../data/dataset/msmarco_bert/passages.fvecs",
+        "query_path": "../data/dataset/msmarco_bert/queries.fvecs",
+        "gt_path": "../data/dataset/msmarco_bert/gt_10.ivecs",
+        "buckets_path": "../data/snap/server/msmarco/buckets.bin",
+        "graph_cache_path": "../data/snap/client/msmarco/graph_cache.bin",
+        "hash_path": "../data/snap/client/msmarco/hash.bin",
+        "metadata_path": "../data/snap/client/msmarco/metadata.bin",
+        "pos_map_path": "../data/snap/client/msmarco/position_map.bin",
+        "block_map_path": "../data/snap/client/msmarco/block_mapping.bin"
+    }
 }
 
 

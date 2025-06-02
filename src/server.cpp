@@ -27,6 +27,7 @@ int port = SERVER_PORT;
 string address = SERVER_IP;
 string dataset = "";
 string config_path;
+bool in_memory = true;
 
 using namespace std;
 
@@ -55,6 +56,7 @@ int main(int argc, char** argv) {
     amap.arg("d", dataset, "Dataset: [sift, trip, msmarco, laion]");
     amap.arg("ip", address, "IP Address of server");
     amap.arg("c", config_path, "Path to config file");
+    amap.arg("m", in_memory, "Path to config file");
     amap.parse(argc, argv);
 
     Metadata md;
@@ -93,7 +95,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    bool in_memory = true;
     RemoteRing server = RemoteRing(io, config, true, in_memory, md.integrity);
     try {
         server.load_server_state(md.buckets_path.c_str());
@@ -126,7 +127,7 @@ int main(int argc, char** argv) {
     try {
         server.start_comm = comm;
         server.start_rounds = round;
-        server.run_server();
+        server.run_server(md.buckets_path);
     } catch (const std::exception& e) {
         cerr << "Error: Exception occurred while running the server. Exception: " << e.what() << endl;
     }
