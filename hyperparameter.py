@@ -331,6 +331,8 @@ def run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterat
     #     print("Exiting without running search.")
     #     exit(0)
     
+    ef_range = [(i * 0.2 * efc) for i in range(1, 6)]
+    print(ef_range)
     for ef in ef_range:
         for w in w_range:
             for iterations in iterations_range:
@@ -339,11 +341,16 @@ def run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterat
                 log_search_results(client_output, dataset, r, efc, ef, w, iterations)
     
 
-datasets = ["trip", "sift"]
+datasets = ["sift"]
 
 # index hyperparameters
 r_range = [128, 256, 512]
-efc_range = [100, 200, 400]
+efc_ranges = {
+    128: [100],         # [20, 40, 60, 80, 100]
+    256: [200],         # [40, 80, 120, 160, 200]
+    512: [400]
+}
+# efc_range = [100, 200, 400]
 alpha_range = [1.2]
 
 # search hyperparameters
@@ -355,6 +362,7 @@ iterations_range = [6, 8, 10, 12, 14]
 def driver():
     for dataset in datasets:
         for r in r_range:
+            efc_range = efc_ranges[r]
             for efc in efc_range:
                 for alpha in alpha_range:
                     run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterations_range, dataset)
