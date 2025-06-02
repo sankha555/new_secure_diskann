@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     amap.parse(argc, argv);
 
     Metadata md;
-    config_path = config_path.size() == 0 ?  (CONFIG_DIR) + "config.json" : config_path;
+    config_path = config_path.size() == 0 ?  (CONFIG_DIR) + "config_" + dataset + ".json" : config_path;
     if (parseJson(config_path, md, dataset) != 0) {
         cerr << "Error: Failed to parse JSON configuration." << endl;
         return EXIT_FAILURE;

@@ -6,7 +6,8 @@ results/
 *.out
 *__pycache__/
 *.index
-src/diskann/build/data
+src/diskann/apps/
+src/diskann/build
 *.txt
 Makefile
 *.a
