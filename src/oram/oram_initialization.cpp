@@ -26,18 +26,26 @@ using namespace std;
 string dataset;
 string config_path;
 
+string degree;
+string efc;
+string pq_bytes;
+
 int main(int argc, char** argv) {
     // this code should be run on the server
     ArgMapping amap;
     amap.arg("d", dataset, "Dataset: [sift, trip, msmarco, laion]");
     amap.arg("c", config_path, "Path to config file");
+    amap.arg("r", degree, "degree of graph");
+    amap.arg("e", efc, "ef construction");
+    amap.arg("p", pq_bytes, "PQ bytes per vector");
+
     amap.parse(argc, argv);
     
     cout << "Starting oram initialization..." << endl;
 
     Metadata md;
 
-    config_path = config_path.size() == 0 ? (CONFIG_DIR) + "config.json" : config_path;
+    config_path = config_path.size() == 0 ? (CONFIG_DIR) + "config_" + dataset + ".json" : config_path;
     if (parseJson(config_path, md, dataset) != 0) {
         cerr << "Error: Failed to parse JSON configuration." << endl;
         return EXIT_FAILURE;
@@ -76,7 +84,7 @@ int main(int argc, char** argv) {
     float* database = fvecs_read(md.base_path.c_str(), &dim, &nb);
     assert((node_id_t) nb == (node_id_t) md.base_size);
 
-    string index_path = GRAPHS_DIR + dataset + "/graph.txt";
+    string index_path = GRAPHS_DIR + dataset + "/graph_R" + degree + "_L" + efc + "_PQ" + pq_bytes + ".txt";
     cout << "Initializing ORAM from " << index_path << "\n";
     oram_builder->load_index(index_path.c_str());
     oram_builder->initiate_and_write_blocks(database, md.block_size);
