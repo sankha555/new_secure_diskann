@@ -96,7 +96,9 @@ int main(int argc, char** argv) {
     bool in_memory = true;
     RemoteRing server = RemoteRing(io, config, true, in_memory, md.integrity);
     try {
-        server.load_server_state(md.buckets_path.c_str());
+        if(md.use_oram){
+            server.load_server_state(md.buckets_path.c_str());
+        }
     } catch (const std::exception& e) {
         cerr << "Error: Failed to load server buckets. Exception: " << e.what() << endl;
         delete random;

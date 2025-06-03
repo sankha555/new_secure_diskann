@@ -279,7 +279,11 @@ struct DiskANNInterface {
                     io->num_rounds--;
 
                     // server_rounds = 2*(((OramRing*) oram_api->oram)->rounds_for_early_reshuffle + ((OramRing*) oram_api->oram)->rounds_for_eviction)/3 + ((OramRing*) oram_api->oram)->rounds_for_oram_access/2;
-                    server_rounds = 2*(((OramRing*) oram_api->oram)->storage->rounds_for_reshuffles + ((OramRing*) oram_api->oram)->storage->rounds_for_evictions)/3 + ((OramRing*) oram_api->oram)->storage->rounds_for_oram_access/2;
+                    if (oram_api == nullptr){
+                        server_rounds = 0;
+                    } else {
+                        server_rounds = 2*(((OramRing*) oram_api->oram)->storage->rounds_for_reshuffles + ((OramRing*) oram_api->oram)->storage->rounds_for_evictions)/3 + ((OramRing*) oram_api->oram)->storage->rounds_for_oram_access/2;
+                    }
 
                     vector<double> data{
                         (double)(L), 

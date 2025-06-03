@@ -115,25 +115,29 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    OramAPI* oram_api = new OramAPI(
-        rss,
-        random,
-        config.num_blocks,
-        md.num_levels,
-        md.oram_cached_levels,
-        config.block_size,
-        config.real_bucket_size,
-        config.dummy_size,
-        config.evict_rate,
-        md.block_map_path,
-        md.metadata_path,
-        md.pos_map_path,
-        md.debug,
-        md.large_number,
-        config
-    );
+    OramAPI* oram_api = nullptr;
+    if (md.use_oram){
+        oram_api = new OramAPI(
+                rss,
+                random,
+                config.num_blocks,
+                md.num_levels,
+                md.oram_cached_levels,
+                config.block_size,
+                config.real_bucket_size,
+                config.dummy_size,
+                config.evict_rate,
+                md.block_map_path,
+                md.metadata_path,
+                md.pos_map_path,
+                md.debug,
+                md.large_number,
+                config
+            );
+    }
+    
 
-    if (!oram_api) {
+    if (md.use_oram && !oram_api) {
         cerr << "Error: Failed to initialize OramAPI." << endl;
         delete random;
         delete rss;
