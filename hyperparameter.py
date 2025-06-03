@@ -333,7 +333,7 @@ def run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterat
     #     print("Exiting without running search.")
     #     exit(0)
     
-    ef_range = [int(i * 0.2 * efc) for i in range(1, 6)]
+    ef_range = [efc]
     print(ef_range)
     for ef in ef_range:
         for w in w_range:
@@ -355,9 +355,9 @@ efc_ranges = {
 alpha_range = [1.2]
 
 # search hyperparameters
-ef_range = [45, 75, 105, 135, 165]
-w_range = [4, 8, 16, 32]
-iterations_range = [6, 8, 10, 12, 14]
+ef_range = []
+w_range = [4]
+iterations_range = [4, 5]
 
 
 def driver():
