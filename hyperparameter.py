@@ -2,7 +2,8 @@ import subprocess
 import os
 from rich import print
 
-project_root = "/home/azureuser/sankha/new_secure_diskann"
+# always run this script from the project root directory
+project_root = os.getcwd()
 
 # double-check this once
 dataset_sizes = {
