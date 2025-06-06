@@ -6,17 +6,13 @@ sudo apt install -y python3-pip
 pip3 install google-cloud-storage google-cloud-compute paramiko gdown
 pip3 install tcconfig 
 
+sudo apt install -y build-essential
+sudo apt install -y libssl-dev liblapack-dev libblas-dev
+sudo apt install -y openssl
 
-mkdir data/datasets
-mkdir data/index
-mkdir data/graphs
-mkdir results
-mkdir oram_data
+sudo snap install cmake --classic
 
-# build diskann
-mkdir src/diskann/build
-cd src/diskann/build
-cmake -DCMAKE_BUILD_TYPE=Release .. && make -Bj
+cmake .
 
 # come back to root
 cd ../../..
