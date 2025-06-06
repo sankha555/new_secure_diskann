@@ -349,7 +349,6 @@ struct DiskANNInterface {
         if(use_oram){
             cout << "Executed " << ((OramRing*)oram_api->oram)->num_reshuffles << " early reshuffles." << endl;
             cout << "Executed " << oram_api->oram_calls << " oram calls." << endl;
-            // cout << "Communication time = " << .count() << "\n";
         }
 
         return best_recall >= fail_if_recall_below ? 0 : -1;

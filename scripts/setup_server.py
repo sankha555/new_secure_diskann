@@ -8,7 +8,7 @@ COMPASS_DATA_ROOT = ""
 DISKANN_DATA_ROOT = ""
 
 DISKANN_ORAM_ROOT = ""
-
+COMPASS_ORAM_ROOT = ""
 
 SUPPORTED_DATASETS = ["sift", "laion100k", "trip", "marco"]
 
@@ -110,6 +110,9 @@ def initialize_empty_diskann_directories():
     GRAPH_ROOT = os.path.join(DISKANN_DATA_ROOT, "graphs")    
     os.makedirs(GRAPH_ROOT, exist_ok=True)
     
+    RESULTS_ROOT = os.path.join(os.getcwd(), "results")
+    os.makedirs(RESULTS_ROOT, exist_ok=True)
+    
     # datsets and indexes
     for dataset in SUPPORTED_DATASETS:
         dataset_dir = os.path.join(DATASET_ROOT, dataset)
@@ -131,6 +134,11 @@ def initialize_empty_diskann_directories():
         os.makedirs(oram_dir, exist_ok=True)
         print(f"Initialized empty directory: {oram_dir}")
         
+        
+def initialize_empty_compass_directories():
+    os.makedirs(COMPASS_DATA_ROOT, exist_ok=True)
+    os.makedirs(COMPASS_ORAM_ROOT, exist_ok=True)
+        
 
 def make_executables():
     # make server
@@ -148,7 +156,9 @@ def server_menu():
     print("2. Download DiskANN Data")
     print("3. Build ORAM")
     print("4. Initialize Empty DiskANN Directories")
-    print("5. Exit")
+    print("5. Initialize Empty Compass Directories")
+    print("6. Make executables")
+    print("0. Exit")
 
     choice = "-1"
 
@@ -170,6 +180,10 @@ def server_menu():
         elif choice == "4":
             initialize_empty_diskann_directories()
         elif choice == "5":
+            initialize_empty_compass_directories()
+        elif choice == "6":
+            make_executables()
+        elif choice == "0":
             exit(0)
         else:
             print("Invalid choice. Please try again.")

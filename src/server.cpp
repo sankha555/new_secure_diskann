@@ -99,7 +99,11 @@ int main(int argc, char** argv) {
         bool ready = true;
         bf_io->send_data(&ready, sizeof(bool));
         cout << "Starting remote server... \n";
-        bf_io->recv_data(&ready, sizeof(bool));
+
+        // int close;
+        // bf_io->recv_data(&close, sizeof(int));
+        cout << "\nServer terminated successfully." << endl;
+
         return 0;
     }
 

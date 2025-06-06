@@ -158,9 +158,12 @@ int main(int argc, char **argv) {
     comm = io->counter - comm;
     rounds = io->num_rounds - rounds;
 
+    io->send_data(&comm, sizeof(int));
     rss->close_server();
 
-    print_communication_metrics(io, comm, rounds, rss, rss->rounds_for_oram_access,rss->rounds_for_reshuffles, rss->rounds_for_evictions);
+    if (md.use_oram) {
+        print_communication_metrics(io, comm, rounds, rss, rss->rounds_for_oram_access,rss->rounds_for_reshuffles, rss->rounds_for_evictions);
+    }
 
     delete oram_api;
     delete random;
