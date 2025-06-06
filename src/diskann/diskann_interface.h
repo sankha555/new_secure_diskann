@@ -136,6 +136,16 @@ struct DiskANNInterface {
 
         double best_recall = 0.0, best_mrr = 0.0;
 
+        int op = -2;
+        io->send_data(&op, sizeof(int));
+        const long long* dummy_data = new long long[1000000]; 
+        long comm = io->counter;
+        for(int i = 0; i < 1000; i++){
+            io->send_data(dummy_data, 1000000 * sizeof(long long));
+            cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
+        }
+        io->counter = comm;
+
         for (uint32_t test_id = 0; test_id < Lvec.size(); test_id++)
         {
             uint32_t L = Lvec[test_id];
@@ -155,8 +165,7 @@ struct DiskANNInterface {
 
             int query_nums_done = 0;
 
-
-    #pragma omp parallel for schedule(dynamic, 1)
+            #pragma omp parallel for schedule(dynamic, 1)
             for (int64_t i = 0; i < (int64_t)query_num; i++)
             {
                 if(use_oram){
@@ -200,6 +209,8 @@ struct DiskANNInterface {
                     );
                 }
                 // cout << "\n";
+
+                cout << "\rQuery " << i + 1 << " done." << std::flush;
 
                 if (query_nums.count(i+1)){
                     
