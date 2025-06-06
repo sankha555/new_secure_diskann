@@ -94,6 +94,15 @@ int main(int argc, char** argv) {
     }
 
     bool in_memory = true;
+
+    if(!md.use_oram){
+        bool ready = true;
+        bf_io->send_data(&ready, sizeof(bool));
+        cout << "Starting remote server... \n";
+        bf_io->recv_data(&ready, sizeof(bool));
+        return 0;
+    }
+
     RemoteRing server = RemoteRing(io, config, true, in_memory, md.integrity);
     try {
         if(md.use_oram){

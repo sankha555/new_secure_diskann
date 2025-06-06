@@ -1544,7 +1544,7 @@ void Index<T, TagT, LabelT>::build_with_data_populated(const std::vector<TagT> &
     generate_frozen_point();
     link();
 
-    FILE* file = std::fopen("/home/azureuser/sankha/new_secure_diskann/data/graphs/graph.txt", "w");  // Open file for writing
+    FILE* file = std::fopen("/home/azureuser/sandhya/new_secure_diskann/data/graphs/graph.txt", "w");  // Open file for writing
 
     if (!file) {
         std::perror("File opening failed");

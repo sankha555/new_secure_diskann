@@ -9,16 +9,19 @@ project_root = os.getcwd()
 dataset_sizes = {
     "trip": 1523871,
     "sift": 1000000,
+    "marco": 8841823
 }
 
 dimensions = {
     "trip": 768,
     "sift": 128,
+    "marco": 768,
 }
 
 pq_bytes = {
     "trip": 64,
     "sift": 32,
+    "marco": 64
 }
 
 non_search_params = {
@@ -97,6 +100,44 @@ non_search_params = {
         # "--gt_file": "data/datasets/sift/sift_query_base_gt100",
         # "--result_path": "results/sift"
     },
+
+    "marco": {
+        "debug": False,
+        "integrity": False,
+        "base_size": dataset_sizes["marco"],
+        "dummy_size": 64,
+        "real_bucket_size": 32,
+        "evict_rate": 36,
+        "num_levels": 19,
+        "oram_cached_levels": 6,
+        "block_size": 1026,
+        "large_number": 1000000,
+        "use_oram": False,
+
+        "buckets_path": "oram_data/marco/buckets.bin",
+        "graph_cache_path": "oram_data/marco/graph_cache.bin",
+        "hash_path": "oram_data/marco/hash.bin",
+        "metadata_path": "oram_data/marco/metadata.bin",
+        "pos_map_path": "oram_data/marco/position_map.bin",
+        "block_map_path": "oram_data/marco/block_mapping.bin",
+
+        "--data_type": "float",
+        "--dist_fn": "l2",
+        "dim": dimensions["marco"],
+        #   "M": 128,
+        #   "-W": 16,
+        "-K": 10,
+        #   "-L": 45,
+        #   "--search_io_limit": 7,
+        "--num_nodes_to_cache": 0,
+        "--query_nums": 6980,
+
+        #   "--index_path_prefix": "data/index/trip/disk_index_trip_base_R128_L50_A1.2",
+        #   "base_path": "../compass/data/dataset/trip_distilbert/passages.fvecs",
+        #   "--query_file": "data/dataset/trip/queries.fbin",
+        #   "--gt_file": "data/dataset/trip/trip_query_base_gt_100",
+        #   "--result_path": "results/trip"
+    }
 }
 
 def get_dataset_paths(r, efc, alpha, dataset):
@@ -145,11 +186,22 @@ def get_build_index_command(r, efc, alpha, dataset):
     
     return command
     
-def run_fvecs_to_fbin(r, efc, alpha, dataset):
-    paths = get_dataset_paths(r, efc, alpha, dataset)
+def run_fvecs_to_fbin(path):
+    path = os.path.abspath(path)
+    if not path.endswith(".fvecs"):
+        print(f"[bold magenta]Error: {path} is not a valid fvecs file.[/bold magenta]")
+        exit(1)
+        
+    folder = os.path.dirname(path)
+    bin_path = os.path.basename(path).replace(".fvecs", ".fbin")
     
+    if os.path.exists(bin_path):
+        print("fbin file already exists...skipping")
+        return
+
+
     # convert fvecs to fbin
-    fvecs_to_fbin_command = f"{project_root}/src/diskann/build/apps/utils/fvecs_to_bin float {paths['base_path']} {paths['--data_path']}"
+    fvecs_to_fbin_command = f"{project_root}/src/diskann/build/apps/utils/fvecs_to_bin float {path} {bin_path}"
     print(f"Converting fvecs to fbin for dataset {dataset}: ")
     print(fvecs_to_fbin_command)
     
@@ -171,7 +223,8 @@ def build_diskann_index(r, efc, alpha, dataset):
         print(f"Index already exists for R = {r}, L = {efc}, A = {alpha}, dataset = {dataset}. Skipping index build.")
         return
 
-    run_fvecs_to_fbin(r, efc, alpha, dataset)
+    # run_fvecs_to_fbin(r, efc, alpha, dataset)
+    run_fvecs_to_fbin(paths["base_path"])
       
     # build index
     command = get_build_index_command(r, efc, alpha, dataset)
@@ -270,6 +323,9 @@ def get_search_command(r, efc, alpha, ef, w, iterations, dataset):
 
 
 def run_diskann_search(r, efc, alpha, ef, w, iterations, dataset):
+    # paths = get_dataset_paths(r, efc, alpha, dataset)
+    # run_fvecs_to_fbin(paths["query_file"])
+    
     client_command, server_command = get_search_command(r, efc, alpha, ef, w, iterations, dataset)
 
     server = subprocess.Popen(server_command, shell=True)
@@ -329,10 +385,10 @@ def log_search_results(client_output, dataset, r, efc, ef, w, iterations):
 def run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterations_range, dataset):
     build_diskann_index(r, efc, alpha, dataset)
     
-    # choice = input(f"Proceed with search? (y/n): ")
-    # if choice.lower() != 'y':
-    #     print("Exiting without running search.")
-    #     exit(0)
+    choice = input(f"Proceed with search? (y/n): ")
+    if choice.lower() != 'y':
+        print("Exiting without running search.")
+        exit(0)
     
     ef_range = [efc]
     print(ef_range)
@@ -344,10 +400,10 @@ def run_experiment_with_hyperparameters(r, efc, alpha, ef_range, w_range, iterat
                 log_search_results(client_output, dataset, r, efc, ef, w, iterations)
     
 
-datasets = ["sift"]
+datasets = ["marco"]
 
 # index hyperparameters
-r_range = [128, 256, 512]
+r_range = [128]
 efc_ranges = {
     128: [100],         
     256: [200],         

@@ -136,15 +136,17 @@ struct DiskANNInterface {
 
         double best_recall = 0.0, best_mrr = 0.0;
 
-        int op = -2;
-        io->send_data(&op, sizeof(int));
-        const long long* dummy_data = new long long[1000000]; 
-        long comm = io->counter;
-        for(int i = 0; i < 1000; i++){
-            io->send_data(dummy_data, 1000000 * sizeof(long long));
-            cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
+        if(use_oram){
+            int op = -2;
+            io->send_data(&op, sizeof(int));
+            const long long* dummy_data = new long long[1000000]; 
+            long comm = io->counter;
+            for(int i = 0; i < 1000; i++){
+                io->send_data(dummy_data, 1000000 * sizeof(long long));
+                cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
+            }
+            io->counter = comm;   
         }
-        io->counter = comm;
 
         for (uint32_t test_id = 0; test_id < Lvec.size(); test_id++)
         {
@@ -281,12 +283,13 @@ struct DiskANNInterface {
                     
                     // fetch server-to-client comm
                     int req = -1;
-                    io->send_data(&req, sizeof(int));
+                    if (use_oram)    io->send_data(&req, sizeof(int));
                     io->counter -= sizeof(int);
 
                     long server_comm, server_rounds;
-                    io->recv_data(&server_comm, sizeof(long));
-                    io->recv_data(&server_rounds, sizeof(long));
+
+                    if (use_oram)   io->recv_data(&server_comm, sizeof(long));
+                    if (use_oram)   io->recv_data(&server_rounds, sizeof(long));
                     io->num_rounds--;
 
                     // server_rounds = 2*(((OramRing*) oram_api->oram)->rounds_for_early_reshuffle + ((OramRing*) oram_api->oram)->rounds_for_eviction)/3 + ((OramRing*) oram_api->oram)->rounds_for_oram_access/2;
