@@ -4,11 +4,13 @@ from rich import print
 
 from google.cloud import storage
 
-COMPASS_DATA_ROOT = ""
-DISKANN_DATA_ROOT = ""
+PROJECT_ROOT = os.getcwd()
 
-DISKANN_ORAM_ROOT = ""
-COMPASS_ORAM_ROOT = ""
+DISKANN_DATA_ROOT = PROJECT_ROOT + "/data"
+COMPASS_DATA_ROOT = os.path.dirname(PROJECT_ROOT) + "compass/data"
+
+DISKANN_ORAM_ROOT = PROJECT_ROOT + "/oram_data"
+COMPASS_ORAM_ROOT = os.path.dirname(PROJECT_ROOT) + "compass/data"
 
 SUPPORTED_DATASETS = ["sift", "laion100k", "trip", "marco"]
 
