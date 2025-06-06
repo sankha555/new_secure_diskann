@@ -65,9 +65,9 @@ def download_data(bucket_name, dataset, download_compass):
 
         # Check if file already exists locally
         if not os.path.exists(dest_file_path):
-            if download_compass and not (blob.name not in compass_paths[dataset]):
+            if download_compass and (blob.name not in compass_paths[dataset]):
                 continue
-            elif not download_compass and not (blob.name not in diskann_paths[dataset]):
+            elif not download_compass and (blob.name not in diskann_paths[dataset]):
                 continue
             
             print(f"Downloading {dest_file_path}...")
