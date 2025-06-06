@@ -3,7 +3,7 @@
 sudo apt update
 
 sudo apt install -y python3-pip
-pip3 install google-cloud-storage google-cloud-compute paramiko gdown
+pip3 install google-cloud-storage google-cloud-compute paramiko gdown pandas matplotlib
 pip3 install tcconfig 
 pip3 install rich
 

@@ -57,7 +57,10 @@ def download_data(bucket_name, dataset, download_compass):
             dest_file_path = os.path.join(COMPASS_DATA_ROOT, blob.name)
         else:
             dest_file_path = os.path.join(DISKANN_DATA_ROOT + "/datasets", dataset)
-            
+            filename = blob.name.split('/')[-1]
+
+            dest_file_path = os.path.join(dest_file_path, filename)    
+        
         os.makedirs(os.path.dirname(dest_file_path), exist_ok=True)
 
         # Check if file already exists locally
