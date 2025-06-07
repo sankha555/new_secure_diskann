@@ -86,11 +86,11 @@ def build_oram(dataset, r, efc, pq_bytes):
     os.makedirs(dir_for_this_index, exist_ok=True)
 
     command = [
-        "./oram_initializer ",
-        "d=", dataset,
-        "r=", str(r),
-        "e=", str(efc),
-        "p=", str(pq_bytes),
+        "./oram_initializer",
+        " d=", dataset,
+        " r=", str(r),
+        " e=", str(efc),
+        " p=", str(pq_bytes),
     ]
     command = " ".join(command)
 
@@ -154,6 +154,20 @@ def make_executables():
     oram_make_command = "make -j oram_initializer"
     subprocess.run(oram_make_command, shell=True)
 
+
+def process_downloaded_data(dataset):
+    dataset_dir = DISKANN_DATA_ROOT + "/datasets/" + dataset
+    
+    if dataset == "marco":
+        # check passages.fvecs
+        raw_data_path = dataset_dir + "/passages.fvecs"
+        bin_data_path = dataset_dir + "/base.bin"
+
+        if not os.path.exists(raw_data_path):
+            print(f"Raw data file: passages.fvecs does not exist. Please download it first...")
+            exit(0)
+
+        
 
 def server_menu():
     print("Setup Server")
