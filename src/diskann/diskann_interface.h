@@ -136,7 +136,7 @@ struct DiskANNInterface {
 
         double best_recall = 0.0, best_mrr = 0.0;
 
-        if(use_oram){
+        if(use_oram && 0){
             int op = -2;
             io->send_data(&op, sizeof(int));
             const long long* dummy_data = new long long[1000000]; 
