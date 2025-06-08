@@ -65,7 +65,9 @@ RemoteRing::RemoteRing(NetIO* io, RingOramConfig oram_config, bool is_server, bo
 	per_bucket_hashes = pow(2, per_bucket_tree_height) - 1;
 
     if(is_server){
+				cout << "Hello\n";
         data = new unsigned char [capacity * bucket_size * ctx_block_size];
+				cout << "Hello2\n";
 
         cout << "> Remote storage server config: " << endl;
         cout << " -> in memory: " << in_memory << endl;

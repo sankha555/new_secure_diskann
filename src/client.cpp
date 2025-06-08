@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
     comm = io->counter - comm;
     rounds = io->num_rounds - rounds;
 
-    io->send_data(&comm, sizeof(int));
+    // io->send_data(&comm, sizeof(int));
     rss->close_server();
 
     if (md.use_oram) {
