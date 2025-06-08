@@ -170,6 +170,7 @@ struct DiskANNNode {
     }
 
     void set_coords(vector<T>& coords){
+        // cout << coords.size() << " " << dim << "\n";
         // bad but assuming sizeof(int) == size(float)
         assert(coords.size() == dim);
         memcpy(data.data() + 1 + DiskANNNode::n_neighbors, coords.data(), dim*sizeof(T));

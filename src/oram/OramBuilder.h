@@ -75,7 +75,13 @@ class OramBuilder {
         }
 
         string line;
+        int i = 0; 
         while (getline(infile, line)) {
+            // if(i < 2700000){
+            //     i++;
+            //     continue;
+            // }
+
             istringstream iss(line);
 
             string node_id;
@@ -95,6 +101,10 @@ class OramBuilder {
             if(stoi(node_id) % 100000 == 0){
                 cout << "-> Done loading graph till node " << node_id << endl;
             }
+            // if(i == 2800000){
+            //     break;
+            // }
+            i++;
         }
 
         infile.close();
@@ -112,26 +122,36 @@ class OramBuilder {
         int dim = DiskANNNode<T, LabelT>::dim;
 
         // cout << "num points: " << num_points << endl;
-        for(int node_id = 0; node_id < num_points; node_id++){
+        for(size_t node_id = 0; node_id < num_points; node_id++){
             DiskANNNode<T, LabelT>* oram_node = new DiskANNNode<T, LabelT>();
             oram_node->set_id(node_id);
 
             oram_node->set_neighbors(graph[node_id]);
+            graph[node_id].clear();
             
             vector<T> coords;
             for(size_t offset = node_id*dim; offset < (node_id+1)*dim; offset++){
+                // if(node_id >= 2796201 && node_id < 2796204){
+                //     cout << node_id << "." << offset << "\n";
+                // }
                 coords.push_back(database[offset]*large_number);
             }
+            // cout << coords.size() << "\n";
             oram_node->set_coords(coords);
+
+            // cout << "Hello5\n";
 
             if(oram_node->get_id() == 8124){
                 oram_node->print_node_info();
             }
+            // cout << "Hello6\n";
+
 
             // oram_node->print_node();
 
             block_id_t block_id = block_fetcher->add_block_with_list(oram_node, {node_id});
             // abort();
+            // cout << "Hello7\n";
 
             if(node_id % 100000 == 0){
                 std::cout << "-> Done clustering: " << node_id << std::endl;

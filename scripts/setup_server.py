@@ -7,10 +7,10 @@ from google.cloud import storage
 PROJECT_ROOT = os.getcwd()
 
 DISKANN_DATA_ROOT = PROJECT_ROOT + "/data"
-COMPASS_DATA_ROOT = os.path.dirname(PROJECT_ROOT) + "compass/data"
+COMPASS_DATA_ROOT = os.path.dirname(PROJECT_ROOT) + "/compass/data"
 
 DISKANN_ORAM_ROOT = PROJECT_ROOT + "/oram_data"
-COMPASS_ORAM_ROOT = os.path.dirname(PROJECT_ROOT) + "compass/data"
+COMPASS_ORAM_ROOT = os.path.dirname(PROJECT_ROOT) + "/compass/data"
 
 SUPPORTED_DATASETS = ["sift", "laion100k", "trip", "marco"]
 
@@ -27,21 +27,21 @@ diskann_paths = {
 compass_paths = {
     "marco": [
         # dataset
-        "dataset/msmarco_bert/passages.fvecs",
-        "dataset/msmarco_bert/queries.fvecs",
-        "dataset/msmarco_bert/gt_10.ivecs",
+        #"dataset/msmarco_bert/passages.fvecs",
+        #"dataset/msmarco_bert/queries.fvecs",
+        #"dataset/msmarco_bert/gt_10.ivecs",
         
         # index
         "dataset/msmarco_bert/hnsw_128_200_2_ip.index",
         "dataset/msmarco_bert/pq_full_32_ip.index",
         
         # oram
-        "snap/client/msmarco/block_mapping.bin",
-        "snap/client/msmarco/graph_cache.bin",
-        "snap/client/msmarco/hash.bin",
-        "snap/client/msmarco/metadata.bin",
-        "snap/client/msmarco/position_map.bin",
-        "snap/server/msmarco/buckets.bin",
+        #"snap/client/msmarco/block_mapping.bin",
+        #"snap/client/msmarco/graph_cache.bin",
+        #"snap/client/msmarco/hash.bin",
+        #"snap/client/msmarco/metadata.bin",
+        #"snap/client/msmarco/position_map.bin",
+        #"snap/server/msmarco/buckets.bin",
     ]
 }
 
@@ -92,7 +92,7 @@ def build_oram(dataset, r, efc, pq_bytes):
         " e=", str(efc),
         " p=", str(pq_bytes),
     ]
-    command = " ".join(command)
+    command = "".join(command)
 
     print(f"Building ORAM for {dataset} with r={r}, efc={efc}, pq_bytes={pq_bytes}...")
     try:

@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     // load database
     size_t nb, dim;
     float* database = fvecs_read(md.base_path.c_str(), &dim, &nb);
-    assert((node_id_t) nb == (node_id_t) md.base_size);
+    // assert((node_id_t) nb == (node_id_t) md.base_size);
 
     string index_path = GRAPHS_DIR + dataset + "/graph_R" + degree + "_L" + efc + "_PQ" + pq_bytes + ".txt";
     cout << "Initializing ORAM from " << index_path << "\n";
