@@ -83,7 +83,7 @@ void RemoteRing::run_server(string buckets_path){
         run_server_memory();
     } else{
         // assert(0);
-				run_server_disk(buckets_path);
+				run_server_disk_2(buckets_path);
     }
     
 }
@@ -359,7 +359,7 @@ void RemoteRing::run_server_memory(){
 				#pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t bucket_id = 0; bucket_id < num_blocks; bucket_id++){
 					size_t bucket_pos = position[bucket_id]*bucket_size + offset[bucket_id]; 
-					size_t bucket_offset = bucket_id * ctx_block_size;
+					size_t payload_write_offset = bucket_id * ctx_block_size;
 					// this->buckets[bucket_pos]->data_to_ptr(payload + bucket_offset);
 					unsigned char* tmp_data = data + bucket_pos*ctx_block_size;
 					mempcpy(payload + bucket_offset, tmp_data, ctx_block_size);
@@ -1010,6 +1010,343 @@ void RemoteRing::run_server_disk(string buckets_path){
 				cout << "Remote storage server Initializing ..." ;
 				assert(0);
 				cout << " done!" << endl;
+				break;
+			}
+			case End:{
+				cout << "Remote storage server closing ..." << "\n";
+				// cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
+				// cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
+				// cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
+				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
+				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
+
+				cout << "IO Time: " << io_time.count() << " seconds \n";
+				cout << "Online IO Time: " << online_io_time.count() << " seconds \n";
+
+				close(bucket_file);
+				return;
+			}
+			default:{
+				assert(0);
+			}
+			
+		}
+		close(bucket_file);
+	}
+}
+
+string get_path_to_bucket(string buckets_path, size_t bucket_id){
+	string path = buckets_path + "/bucket_" + std::to_string(bucket_id) + ".bin";
+	return path;
+}
+
+void RemoteRing::run_server_disk_2(string buckets_path){
+	// cout << "Remote storage server running ..." << endl;
+	size_t bucket_size = oram_config.bucket_size;
+	size_t ctx_block_size = SBucket::getCipherSize();
+	size_t metadata_size = sizeof(int) + sizeof(int) + sizeof(bool);
+
+  std::chrono::duration<double> io_time;
+  std::chrono::duration<double> online_io_time;
+
+	long server_to_client = 0;
+	long client_to_server = 0;
+	long oram_comm = 0;
+	long reshuffling_comm = 0;
+	long eviction_comm = 0;
+	long long_term_comm = 0;
+
+	while(1) {
+		int rt;
+		io->recv_data(&rt, sizeof(int));
+		client_to_server += sizeof(int);
+		if(rt == ReadBatchBlock_R || rt == WriteBatch_R){
+			reshuffling_comm += sizeof(int);
+		}
+
+		if(rt == WriteBatch || rt == WriteBatch_R){
+			eviction_comm += sizeof(int);
+		}
+
+		if(rt == ReadBatchBlockXor){
+			oram_comm += sizeof(int);
+		}
+
+		switch (rt){
+			case -1: {
+				long comm = io->counter - start_comm;
+				long rounds = io->num_rounds - start_rounds;
+
+				// cout << "Received req to send comm: " << comm << " bytes" << endl;
+				io->send_data(&comm, sizeof(long));
+				io->send_data(&rounds, sizeof(long));
+
+				io->counter -= 2*sizeof(long);
+				io->num_rounds--;
+				break;
+			}
+
+			case ReadBatchBlock_R:
+			case ReadBatchBlock: {
+				// cout << "ReadBatchBlock" << endl;
+				size_t num_blocks;
+
+				io->recv_data(&num_blocks, sizeof(size_t));
+
+				client_to_server += sizeof(size_t);
+				if(rt == ReadBatchBlock_R){
+					reshuffling_comm += sizeof(size_t);
+				} else {
+					eviction_comm += sizeof(size_t);
+				}
+
+				// auto t_fetch = std::chrono::high_resolution_clock::now();
+				
+				std::vector<int> position(num_blocks);
+				std::vector<int> offset(num_blocks);
+				io->recv_data(position.data(), sizeof(int)*num_blocks);
+				io->recv_data(offset.data(), sizeof(int)*num_blocks);
+
+				client_to_server += 2*sizeof(int)*num_blocks;
+				if(rt == ReadBatchBlock_R){
+					reshuffling_comm += 2*sizeof(int)*num_blocks;
+				} else {
+					eviction_comm += 2*sizeof(int)*num_blocks;
+				}
+
+				size_t len = num_blocks * (ctx_block_size);
+				// cout << "ReadBucketBatch allocate payload for size: " << len << endl;
+				unsigned char* payload = new unsigned char[len];
+				// cout << "ReadBucketBatch allocate done" << endl;
+
+				// #pragma omp parallel for num_threads(NUM_THREADS)
+				auto start_read = std::chrono::high_resolution_clock::now();
+				for(size_t req_id = 0; req_id < num_blocks; req_id++){
+
+					size_t bucket_id = position[req_id];	// bucket to be queried
+					size_t block_id = offset[req_id];			// block inside this bucket to be queries
+					const char* bucket_file_path = get_path_to_bucket(buckets_path, bucket_id).c_str();
+
+					unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
+					FILE* bucket_file = fopen(bucket_file_path, "r");
+					size_t bytesRead = fread(bucket_data, 1, sizeof(bucket_data), bucket_file);
+					if(bytesRead != bucket_size*ctx_block_size){
+						cout << "Full bucket not read from bucket " << bucket_id << "\n";
+						perror("");
+					}
+
+					unsigned char* tmp_data = bucket_data + block_id*ctx_block_size;
+					size_t payload_write_offset = req_id * ctx_block_size;
+					mempcpy(payload + payload_write_offset, tmp_data, ctx_block_size);
+				} 
+				auto end_read = std::chrono::high_resolution_clock::now();
+
+				// cout << "ReadBucketBatch write to payload done" << endl;
+
+				long comm = io->counter;
+				io->send_data(payload, sizeof(unsigned char)*len);
+				comm = io->counter - comm;
+
+				io_time += (end_read - start_read);
+				if(rt == ReadBatchBlock_R){
+					online_io_time += (end_read - start_read);
+				}
+
+				server_to_client += sizeof(unsigned char)*len;
+				if(rt == ReadBatchBlock_R){
+					reshuffling_comm += sizeof(unsigned char)*len;
+				} else {
+					eviction_comm += sizeof(unsigned char)*len;
+				}
+
+				io->send_data(&comm, sizeof(long));
+				io->counter -= sizeof(long);
+
+				if(integrity){
+					if(rt == ReadBatchBlock){
+						// for bucket read
+						send_hash_bucket(position, offset);
+					} else{
+						// for reshuffle
+						send_hash_reshuffle(position, offset);
+					}
+					// send_hash(position, offset);
+				}
+
+				// cout << "ReadBucketBatch send to client done" << endl;
+
+				delete[] payload;
+
+				break;
+			}
+			
+			case ReadBatchBlockXor:{
+				// cout << "ReadBatchBlockXor" << endl;
+				size_t num_blocks;
+				size_t num_real_blocks;
+				io->recv_data(&num_blocks, sizeof(size_t));
+				io->recv_data(&num_real_blocks, sizeof(size_t));
+
+				client_to_server += 2*sizeof(size_t);
+				oram_comm += 2*sizeof(size_t);
+				
+				std::vector<int> position(num_blocks);
+				std::vector<int> offset(num_blocks);
+				io->recv_data(position.data(), sizeof(int)*num_blocks);
+				io->recv_data(offset.data(), sizeof(int)*num_blocks);
+
+				client_to_server += 2*sizeof(int)*num_blocks;
+				oram_comm += 2*sizeof(int)*num_blocks;
+
+
+				size_t path_len = num_blocks / num_real_blocks;
+
+				// no need for ivs
+				size_t len = num_real_blocks * (ctx_block_size - 16);
+
+				unsigned char* payload = new unsigned char[len];
+				unsigned char* ivs = new unsigned char[num_blocks*16];
+				std::memset(payload, 0, len); 
+
+				auto start_read = std::chrono::high_resolution_clock::now();
+
+				// #pragma omp parallel for num_threads(NUM_THREADS)
+				for(size_t real_req_id = 0; real_req_id < num_real_blocks; real_req_id++){
+					size_t payload_write_offset = real_req_id * (ctx_block_size - 16);
+					for(int i = 0; i < path_len; i++){
+						size_t req_id = real_req_id * path_len + i;
+						size_t bucket_id = position[req_id];
+						size_t block_id = offset[req_id]; 
+
+						const char* bucket_file_path = get_path_to_bucket(buckets_path, bucket_id).c_str();
+
+						unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
+						FILE* bucket_file = fopen(bucket_file_path, "r");
+						size_t bytesRead = fread(bucket_data, 1, sizeof(bucket_data), bucket_file);
+						if(bytesRead != bucket_size*ctx_block_size){
+							cout << "Full bucket not read from bucket " << bucket_id << "\n";
+							perror("");
+						}
+						unsigned char* write_ptr = payload + payload_write_offset;
+						unsigned char* tmp_data = bucket_data + block_id*ctx_block_size;
+						
+						// first 16 goes to iv
+						memcpy(ivs + req_id*16, tmp_data, 16);
+
+						// 16 - block_size goes to xor
+						for(size_t j = 16; j < ctx_block_size; j++){
+							write_ptr[j - 16] = tmp_data[j] ^ write_ptr[j - 16]; 
+						}
+					}
+					
+				}
+				auto end_read = std::chrono::high_resolution_clock::now();
+
+
+				long comm = io->counter;
+				io->send_data(payload, sizeof(unsigned char)*len);
+				io->send_data(ivs, sizeof(unsigned char)*num_blocks*16);
+				comm = io->counter - comm;
+				
+				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
+				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
+
+				io_time += (end_read - start_read);
+				online_io_time += (end_read - start_read);
+
+				io->send_data(&comm, sizeof(long));
+				io->counter -= sizeof(long);
+
+				if(integrity){
+					send_hash(position, offset);
+				}
+
+				// cout << "ReadBatchBlockXor send to client done" << endl;
+
+				delete[] payload;
+
+				break;
+			}
+			
+			case WriteBatch_R:
+			case WriteBatch:{
+				break;
+				size_t num_buckets;
+
+				io->recv_data(&num_buckets, sizeof(size_t));
+
+				client_to_server += sizeof(size_t);
+				if(rt == WriteBatch_R){
+					reshuffling_comm += sizeof(size_t);
+				} else {
+					eviction_comm += sizeof(size_t);
+				}
+
+				std::vector<int> position(num_buckets);
+				io->recv_data(position.data(), sizeof(int)*num_buckets);
+
+				client_to_server += sizeof(int)*num_buckets;
+				if(rt == WriteBatch_R){
+					reshuffling_comm += sizeof(int)*num_buckets;
+				} else {
+					eviction_comm += sizeof(int)*num_buckets;
+				}
+
+				size_t len = num_buckets * bucket_size * (ctx_block_size);
+
+				unsigned char* payload = new unsigned char[len];
+				// cout << "WriteBatch allocate done" << endl;
+
+				io->recv_data(payload, sizeof(unsigned char)*len);
+
+				client_to_server += sizeof(unsigned char)*len;
+				if(rt = WriteBatch_R){
+					reshuffling_comm += sizeof(unsigned char)*len;
+				} else {
+					eviction_comm += sizeof(unsigned char)*len;
+				}
+
+				auto start_read = std::chrono::high_resolution_clock::now();
+				// #pragma omp parallel for num_threads(NUM_THREADS)
+				for(size_t bucket_id = 0; bucket_id < num_buckets; bucket_id++){
+					for(size_t block_id = 0; block_id < bucket_size; block_id++){
+						size_t block_pos = position[bucket_id]*bucket_size + block_id;
+						size_t block_offset = (bucket_id*bucket_size + block_id) * ctx_block_size;
+						// this->buckets[block_pos]->data_from_ptr(payload + block_offset);
+						// unsigned char* tmp_data = data + block_pos*ctx_block_size;
+						unsigned char* tmp_data = new unsigned char[ctx_block_size];
+
+						mempcpy(tmp_data, payload + block_offset, ctx_block_size);
+
+						off_t offset = metadata_size + block_pos * ctx_block_size;
+						if(lseek(bucket_file, offset, SEEK_SET) == -1){
+							cerr << "Error seeking in bucket file: " << buckets_path << endl;
+							exit(EXIT_FAILURE);
+						}
+						ssize_t write_size = write(bucket_file, tmp_data, ctx_block_size);
+						if(write_size != ctx_block_size){
+							cerr << "Error writing to bucket file: " << buckets_path << endl;
+							exit(EXIT_FAILURE);
+						}
+						delete[] tmp_data;
+					}
+				} 
+				auto end_read = std::chrono::high_resolution_clock::now();
+
+				io_time += (end_read - start_read);
+				if(rt == WriteBatch_R){
+					online_io_time += (end_read - start_read);
+				}
+
+				if(integrity){
+					if(rt == WriteBatch){
+						update_hash(position, payload);
+					} else{
+						update_hash_reshuffle(position, payload);
+					}
+				}
+				
+				delete[] payload;
 				break;
 			}
 			case End:{

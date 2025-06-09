@@ -19,6 +19,7 @@ public:
     void run_server(string buckets_path);
     void run_server_memory();
     void run_server_disk(string buckets_path);
+    void run_server_disk_2(string buckets_path);
 
     //client
     void ReadBlockBatchAsBlockRing(const std::vector<int>& positions, const std::vector<int>& offsets, std::vector<Block*>& blocks, std::vector<bool> &valids, bool isReshuffle);
