@@ -152,6 +152,8 @@ int main(int argc, char **argv) {
     diskann.read_diskann_args(dataset);
 
     long comm = io->counter, rounds = io->num_rounds;
+    bool ready;
+    bf_io->recv_data(&ready, sizeof(bool));
 
     diskann.initiate_and_run_diskann(oram_api);
     
