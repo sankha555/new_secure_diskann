@@ -1222,7 +1222,7 @@ void RemoteRing::run_server_disk_2(string buckets_path){
 						size_t block_id = offset[req_id]; 
 
 						string bucket_file_path = get_path_to_bucket(buckets_path, bucket_id);
-						//cout << bucket_file_path << "\n";
+						cout << bucket_file_path << "\n";
 						unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
 						FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
 						//cout << "bucket found\n";
@@ -1266,7 +1266,7 @@ void RemoteRing::run_server_disk_2(string buckets_path){
 					send_hash(position, offset);
 				}
 
-				// cout << "ReadBatchBlockXor send to client done" << endl;
+				cout << "ReadBatchBlockXor send to client done" << endl;
 
 				delete[] payload;
 
