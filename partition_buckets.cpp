@@ -8,7 +8,6 @@ using namespace std;
 
 int main(){
   string buckets_path = "oram_data/marco/R128_L100_PQ64/buckets.bin";
-
   size_t ctx_block_size = 3616;
   size_t num_buckets = 524287;
   size_t bucket_size = 96;
@@ -30,6 +29,7 @@ int main(){
       cerr << "Error reading from bucket file: offset " << bucket_pos << endl;
       exit(EXIT_FAILURE);
     }
+
 
     string small_bucket_path = "oram_data/marco/R128_L100_PQ64/buckets/bucket_" + std::to_string(bucket_pos) + ".bin";
     int small_bucket_file = open(small_bucket_path.c_str(), O_WRONLY | O_CREAT);
