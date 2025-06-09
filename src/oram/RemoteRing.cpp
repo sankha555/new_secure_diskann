@@ -1132,7 +1132,7 @@ void RemoteRing::run_server_disk_2(string buckets_path){
 					
 					unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
 					FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
-					size_t bytesRead = fread(bucket_data, 1, sizeof(bucket_data), bucket_file);
+					size_t bytesRead = fread(bucket_data, 1, bucket_size*ctx_block_size, bucket_file);
 					if(bytesRead != bucket_size*ctx_block_size){
 						cout << "Full bucket not read from bucket " << bucket_id << "\n";
 						perror("");
@@ -1226,7 +1226,7 @@ void RemoteRing::run_server_disk_2(string buckets_path){
 						unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
 						FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
 						//cout << "bucket found\n";
-						size_t bytesRead = fread(bucket_data, 1, sizeof(bucket_data), bucket_file);
+						size_t bytesRead = fread(bucket_data, 1, bucket_size*ctx_block_size, bucket_file);
 						//cout << "bucket read\n";
 						if(bytesRead != bucket_size*ctx_block_size){
 							cout << "Full bucket not read from bucket " << bucket_id << ", read" << bytesRead  << "\n";
