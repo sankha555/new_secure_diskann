@@ -272,7 +272,8 @@ void RemoteRing::load_server_hash(const char* fname){
 
 void RemoteRing::run_server_memory(){
 	// cout << "Remote storage server running ..." << endl;
-    
+    double io_time = 0;
+
 	long server_to_client = 0;
 	long client_to_server = 0;
 	long oram_comm = 0;
@@ -352,6 +353,8 @@ void RemoteRing::run_server_memory(){
 				unsigned char* payload = new unsigned char[len];
 				// cout << "ReadBucketBatch allocate done" << endl;
 
+				auto start_read = std::chrono::high_resolution_clock::now();
+
 				#pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t bucket_id = 0; bucket_id < num_blocks; bucket_id++){
 					size_t bucket_pos = position[bucket_id]*bucket_size + offset[bucket_id]; 
@@ -361,11 +364,16 @@ void RemoteRing::run_server_memory(){
 					mempcpy(payload + bucket_offset, tmp_data, ctx_block_size);
 				} 
 
+				auto end_read = std::chrono::high_resolution_clock::now();
+
+
 				// cout << "ReadBucketBatch write to payload done" << endl;
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
 				comm = io->counter - comm;
+
+				io_time += (end_read - start_read).count();
 
 				server_to_client += sizeof(unsigned char)*len;
 				if(rt == ReadBatchBlock_R){
@@ -423,6 +431,8 @@ void RemoteRing::run_server_memory(){
 				unsigned char* ivs = new unsigned char[num_blocks*16];
 				std::memset(payload, 0, len); 
 
+				auto start_read = std::chrono::high_resolution_clock::now();
+
 				#pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t block_id = 0; block_id < num_real_blocks; block_id++){
 					size_t bucket_offset = block_id * (ctx_block_size - 16);
@@ -445,11 +455,15 @@ void RemoteRing::run_server_memory(){
 					
 				}
 
+				auto end_read = std::chrono::high_resolution_clock::now();
+
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
 				io->send_data(ivs, sizeof(unsigned char)*num_blocks*16);
 				comm = io->counter - comm;
 				
+				io_time += (end_read - start_read).count();
+
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 
@@ -541,6 +555,8 @@ void RemoteRing::run_server_memory(){
 					eviction_comm += sizeof(unsigned char)*len;
 				}
 
+				auto start_read = std::chrono::high_resolution_clock::now();
+
 				#pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t bucket_id = 0; bucket_id < num_buckets; bucket_id++){
 					for(size_t block_id = 0; block_id < bucket_size; block_id++){
@@ -551,6 +567,10 @@ void RemoteRing::run_server_memory(){
 						mempcpy(tmp_data, payload + block_offset, ctx_block_size);
 					}
 				} 
+
+				auto end_read = std::chrono::high_resolution_clock::now();
+
+				io_time += (end_read - start_read).count();
 
 				if(integrity){
 					if(rt == WriteBatch){
@@ -584,12 +604,13 @@ void RemoteRing::run_server_memory(){
 			}
 			case End:{
 				cout << "Remote storage server closing ..." << "\n";
-				cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
-				cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
-				cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
-				cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
-				cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
+				// cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
+				// cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
+				// cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
+				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
+				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
+				cout << "IO Time: " << io_time << " seconds \n";
 
 				return;
 			}
@@ -608,7 +629,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 	size_t ctx_block_size = SBucket::getCipherSize();
 	size_t metadata_size = sizeof(int) + sizeof(int) + sizeof(bool);
 
-    
+    double io_time = 0; 
+	
 	long server_to_client = 0;
 	long client_to_server = 0;
 	long oram_comm = 0;
@@ -691,6 +713,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				// cout << "ReadBucketBatch allocate done" << endl;
 
 				// #pragma omp parallel for num_threads(NUM_THREADS)
+				auto start_read = std::chrono::high_resolution_clock::now();
 				for(size_t bucket_id = 0; bucket_id < num_blocks; bucket_id++){
 					size_t bucket_pos = position[bucket_id]*bucket_size + offset[bucket_id]; 
 					size_t bucket_offset = bucket_id * ctx_block_size;
@@ -712,12 +735,15 @@ void RemoteRing::run_server_disk(string buckets_path){
 					unsigned char* tmp_data = data;// + bucket_pos*ctx_block_size;
 					mempcpy(payload + bucket_offset, tmp_data, ctx_block_size);
 				} 
+				auto end_read = std::chrono::high_resolution_clock::now();
 
 				// cout << "ReadBucketBatch write to payload done" << endl;
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
 				comm = io->counter - comm;
+
+				io_time += (end_read - start_read).count();
 
 				server_to_client += sizeof(unsigned char)*len;
 				if(rt == ReadBatchBlock_R){
@@ -775,6 +801,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 				unsigned char* ivs = new unsigned char[num_blocks*16];
 				std::memset(payload, 0, len); 
 
+				auto start_read = std::chrono::high_resolution_clock::now();
+
 				// #pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t block_id = 0; block_id < num_real_blocks; block_id++){
 					size_t bucket_offset = block_id * (ctx_block_size - 16);
@@ -808,6 +836,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 					}
 					
 				}
+				auto end_read = std::chrono::high_resolution_clock::now();
+
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
@@ -816,6 +846,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 				
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
+
+				io_time += (end_read - start_read).count();
 
 				io->send_data(&comm, sizeof(long));
 				io->counter -= sizeof(long);
@@ -904,6 +936,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 					eviction_comm += sizeof(unsigned char)*len;
 				}
 
+				auto start_read = std::chrono::high_resolution_clock::now();
 				// #pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t bucket_id = 0; bucket_id < num_buckets; bucket_id++){
 					for(size_t block_id = 0; block_id < bucket_size; block_id++){
@@ -928,6 +961,9 @@ void RemoteRing::run_server_disk(string buckets_path){
 						delete[] tmp_data;
 					}
 				} 
+				auto end_read = std::chrono::high_resolution_clock::now();
+
+				io_time += (end_read - start_read).count();
 
 				if(integrity){
 					if(rt == WriteBatch){
@@ -961,11 +997,13 @@ void RemoteRing::run_server_disk(string buckets_path){
 			}
 			case End:{
 				cout << "Remote storage server closing ..." << "\n";
-				cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
-				cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
-				cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
-				cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
-				cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
+				// cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
+				// cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
+				// cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
+				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
+				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
+
+				cout << "IO Time: " << io_time << " seconds \n";
 
 				close(bucket_file);
 				return;

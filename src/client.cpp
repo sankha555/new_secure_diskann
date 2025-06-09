@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     amap.parse(argc, argv);
 
     Metadata md;
-    config_path = config_path.size() == 0 ?  (CONFIG_DIR) + "config.json" : config_path;
+    config_path = config_path.size() == 0 ?  (CONFIG_DIR) + "config_" + dataset + ".json" : config_path;
     if (parseJson(config_path, md, dataset) != 0) {
         cerr << "Error: Failed to parse JSON configuration." << endl;
         return EXIT_FAILURE;
@@ -148,6 +148,8 @@ int main(int argc, char **argv) {
     diskann.read_diskann_args(dataset);
 
     long comm = io->counter, rounds = io->num_rounds;
+    bool ready;
+    bf_io->recv_data(&ready, sizeof(bool));
 
     diskann.initiate_and_run_diskann(oram_api);
     
