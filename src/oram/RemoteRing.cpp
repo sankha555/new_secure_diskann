@@ -273,6 +273,7 @@ void RemoteRing::load_server_hash(const char* fname){
 void RemoteRing::run_server_memory(){
 	// cout << "Remote storage server running ..." << endl;
     std::chrono::duration<double> io_time;
+    std::chrono::duration<double> online_io_time;
 
 	long server_to_client = 0;
 	long client_to_server = 0;
@@ -374,6 +375,9 @@ void RemoteRing::run_server_memory(){
 				comm = io->counter - comm;
 
 				io_time += (end_read - start_read);
+				if(rt == ReadBatchBlock_R){
+					online_io_time += (end_read - start_read);
+				}
 
 				server_to_client += sizeof(unsigned char)*len;
 				if(rt == ReadBatchBlock_R){
@@ -463,6 +467,7 @@ void RemoteRing::run_server_memory(){
 				comm = io->counter - comm;
 				
 				io_time += (end_read - start_read);
+				online_io_time + (end_read - start_read);
 
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
@@ -571,6 +576,9 @@ void RemoteRing::run_server_memory(){
 				auto end_read = std::chrono::high_resolution_clock::now();
 
 				io_time += (end_read - start_read);
+				if(rt == WriteBatch_R){
+					online_io_time += (end_read - start_read);
+				}
 
 				if(integrity){
 					if(rt == WriteBatch){
@@ -610,7 +618,8 @@ void RemoteRing::run_server_memory(){
 				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
 				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
-				cout << "IO Time: " << io_time.count() << " seconds \n";
+				cout << "Total IO Time: " << io_time.count() << " seconds \n";
+				cout << "Online IO Time: " << online_io_time.count() << " seconds \n";
 
 				return;
 			}
@@ -630,7 +639,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 	size_t metadata_size = sizeof(int) + sizeof(int) + sizeof(bool);
 
     std::chrono::duration<double> io_time;
-	
+    std::chrono::duration<double> online_io_time;
+
 	long server_to_client = 0;
 	long client_to_server = 0;
 	long oram_comm = 0;
@@ -744,6 +754,9 @@ void RemoteRing::run_server_disk(string buckets_path){
 				comm = io->counter - comm;
 
 				io_time += (end_read - start_read);
+				if(rt == ReadBatchBlock_R){
+					online_io_time += (end_read - start_read);
+				}
 
 				server_to_client += sizeof(unsigned char)*len;
 				if(rt == ReadBatchBlock_R){
@@ -848,6 +861,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 
 				io_time += (end_read - start_read);
+				online_io_time += (end_read - start_read);
 
 				io->send_data(&comm, sizeof(long));
 				io->counter -= sizeof(long);
@@ -964,6 +978,9 @@ void RemoteRing::run_server_disk(string buckets_path){
 				auto end_read = std::chrono::high_resolution_clock::now();
 
 				io_time += (end_read - start_read);
+				if(rt == WriteBatch_R){
+					online_io_time += (end_read - start_read);
+				}
 
 				if(integrity){
 					if(rt == WriteBatch){
@@ -1004,6 +1021,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
 				cout << "IO Time: " << io_time.count() << " seconds \n";
+				cout << "Online IO Time: " << online_io_time.count() << " seconds \n";
 
 				close(bucket_file);
 				return;
