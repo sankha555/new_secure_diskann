@@ -20,7 +20,7 @@ int main(){
     
     off_t offset = metadata_size + bucket_pos * ctx_block_size * bucket_size;
     if(lseek(bucket_file, offset, SEEK_SET) == -1){
-      std::cerr << "Error seeking in bucket file" << std::endl;
+      std::cerr << "Error seeking in bucket file : bucket " << bucket_pos << std::endl;
       exit(EXIT_FAILURE);
     }
 
