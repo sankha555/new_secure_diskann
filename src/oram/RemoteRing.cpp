@@ -373,7 +373,7 @@ void RemoteRing::run_server_memory(){
 				io->send_data(payload, sizeof(unsigned char)*len);
 				comm = io->counter - comm;
 
-				io_time += (end_read - start_read).count();
+				io_time += (end_read - start_read);
 
 				server_to_client += sizeof(unsigned char)*len;
 				if(rt == ReadBatchBlock_R){
@@ -462,7 +462,7 @@ void RemoteRing::run_server_memory(){
 				io->send_data(ivs, sizeof(unsigned char)*num_blocks*16);
 				comm = io->counter - comm;
 				
-				io_time += (end_read - start_read).count();
+				io_time += (end_read - start_read);
 
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
@@ -570,7 +570,7 @@ void RemoteRing::run_server_memory(){
 
 				auto end_read = std::chrono::high_resolution_clock::now();
 
-				io_time += (end_read - start_read).count();
+				io_time += (end_read - start_read);
 
 				if(integrity){
 					if(rt == WriteBatch){
@@ -610,7 +610,7 @@ void RemoteRing::run_server_memory(){
 				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
 				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
-				cout << "IO Time: " << io_time << " seconds \n";
+				cout << "IO Time: " << io_time.count() << " seconds \n";
 
 				return;
 			}
@@ -743,7 +743,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				io->send_data(payload, sizeof(unsigned char)*len);
 				comm = io->counter - comm;
 
-				io_time += (end_read - start_read).count();
+				io_time += (end_read - start_read);
 
 				server_to_client += sizeof(unsigned char)*len;
 				if(rt == ReadBatchBlock_R){
@@ -847,7 +847,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 
-				io_time += (end_read - start_read).count();
+				io_time += (end_read - start_read);
 
 				io->send_data(&comm, sizeof(long));
 				io->counter -= sizeof(long);
@@ -963,7 +963,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				} 
 				auto end_read = std::chrono::high_resolution_clock::now();
 
-				io_time += (end_read - start_read).count();
+				io_time += (end_read - start_read);
 
 				if(integrity){
 					if(rt == WriteBatch){
@@ -1003,7 +1003,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
 				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
-				cout << "IO Time: " << io_time << " seconds \n";
+				cout << "IO Time: " << io_time.count() << " seconds \n";
 
 				close(bucket_file);
 				return;
