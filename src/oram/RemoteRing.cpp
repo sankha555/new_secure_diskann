@@ -1037,6 +1037,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 
 string get_path_to_bucket(string buckets_path, size_t bucket_id){
 	string path = buckets_path + "/bucket_" + std::to_string(bucket_id) + ".bin";
+	//cout << path << "\n";
 	return path;
 }
 
@@ -1125,10 +1126,12 @@ void RemoteRing::run_server_disk_2(string buckets_path){
 
 					size_t bucket_id = position[req_id];	// bucket to be queried
 					size_t block_id = offset[req_id];			// block inside this bucket to be queries
-					const char* bucket_file_path = get_path_to_bucket(buckets_path, bucket_id).c_str();
+					string bucket_file_path = get_path_to_bucket(buckets_path, bucket_id);
 
+					cout << bucket_file_path << "\n";
+					
 					unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
-					FILE* bucket_file = fopen(bucket_file_path, "r");
+					FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
 					size_t bytesRead = fread(bucket_data, 1, sizeof(bucket_data), bucket_file);
 					if(bytesRead != bucket_size*ctx_block_size){
 						cout << "Full bucket not read from bucket " << bucket_id << "\n";
@@ -1218,13 +1221,15 @@ void RemoteRing::run_server_disk_2(string buckets_path){
 						size_t bucket_id = position[req_id];
 						size_t block_id = offset[req_id]; 
 
-						const char* bucket_file_path = get_path_to_bucket(buckets_path, bucket_id).c_str();
-
+						string bucket_file_path = get_path_to_bucket(buckets_path, bucket_id);
+						//cout << bucket_file_path << "\n";
 						unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
-						FILE* bucket_file = fopen(bucket_file_path, "r");
+						FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
+						//cout << "bucket found\n";
 						size_t bytesRead = fread(bucket_data, 1, sizeof(bucket_data), bucket_file);
+						//cout << "bucket read\n";
 						if(bytesRead != bucket_size*ctx_block_size){
-							cout << "Full bucket not read from bucket " << bucket_id << "\n";
+							cout << "Full bucket not read from bucket " << bucket_id << ", read" << bytesRead  << "\n";
 							perror("");
 						}
 						unsigned char* write_ptr = payload + payload_write_offset;
