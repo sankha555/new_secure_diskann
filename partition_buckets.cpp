@@ -7,7 +7,7 @@
 using namespace std;
 
 int main(){
-  string buckets_path = "oram_data/marco/R128_L100_P64/buckets.bin";
+  string buckets_path = "oram_data/marco/R128_L100_PQ64/buckets.bin";
 
   size_t ctx_block_size = 3616;
   size_t num_buckets = 524287;
@@ -31,10 +31,11 @@ int main(){
       exit(EXIT_FAILURE);
     }
 
-    string small_bucket_path = "oram_data/marco/R128_L100_P64/buckets/bucket_" + std::to_string(bucket_pos) + ".bin";
-	  int small_bucket_file = open(small_bucket_path.c_str(), O_WRONLY);
+    string small_bucket_path = "oram_data/marco/R128_L100_PQ64/buckets/bucket_" + std::to_string(bucket_pos) + ".bin";
+    int small_bucket_file = open(small_bucket_path.c_str(), O_WRONLY | O_CREAT);
     ssize_t write_size = write(small_bucket_file, data, bucket_size * ctx_block_size);
     if(write_size != bucket_size * ctx_block_size){
+	cout << "Write size: " << write_size << endl;
       cerr << "Error writing to small bucket file: " << bucket_pos << endl;
       exit(EXIT_FAILURE);
     }
