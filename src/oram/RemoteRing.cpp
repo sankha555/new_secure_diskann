@@ -272,7 +272,7 @@ void RemoteRing::load_server_hash(const char* fname){
 
 void RemoteRing::run_server_memory(){
 	// cout << "Remote storage server running ..." << endl;
-    double io_time = 0;
+    std::chrono::duration<double> io_time;
 
 	long server_to_client = 0;
 	long client_to_server = 0;
@@ -629,7 +629,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 	size_t ctx_block_size = SBucket::getCipherSize();
 	size_t metadata_size = sizeof(int) + sizeof(int) + sizeof(bool);
 
-    double io_time = 0; 
+    std::chrono::duration<double> io_time;
 	
 	long server_to_client = 0;
 	long client_to_server = 0;
