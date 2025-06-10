@@ -22,7 +22,7 @@
         "dim": 768,
         "-K": 10,
         "--num_nodes_to_cache": 0,
-        "--query_nums": 10,
+        "--query_nums": 1,
         "M": 128,
         "-W": 48,
         "-L": 100,

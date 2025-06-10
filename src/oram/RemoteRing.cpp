@@ -413,7 +413,7 @@ void RemoteRing::run_server_memory(){
 				size_t num_real_blocks;
 				io->recv_data(&num_blocks, sizeof(size_t));
 				io->recv_data(&num_real_blocks, sizeof(size_t));
-				cout << "Num real blocks: " << num_blocks << ", num blocks: " << num_real_blocks << "\n";
+				// cout << "Num real blocks: " << num_real_blocks << ", num blocks: " << num_blocks << "\n";
 
 				client_to_server += 2*sizeof(size_t);
 				oram_comm += 2*sizeof(size_t);
@@ -815,7 +815,6 @@ void RemoteRing::run_server_disk(string buckets_path){
 				unsigned char* ivs = new unsigned char[num_blocks*16];
 				std::memset(payload, 0, len); 
 
-				auto start_read = std::chrono::high_resolution_clock::now();
 
 				// #pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t block_id = 0; block_id < num_real_blocks; block_id++){
@@ -825,6 +824,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 						size_t bucket_pos = position[bucket_id]*bucket_size + offset[bucket_id]; 
 						// this->buckets[bucket_pos]->data_xor_to_ptr(payload + bucket_offset);
 
+						auto start_read = std::chrono::high_resolution_clock::now();
+
 						off_t offset = metadata_size + bucket_pos * ctx_block_size;
 						if(lseek(bucket_file, offset, SEEK_SET) == -1){
 							cerr << "Error seeking in bucket file: " << buckets_path << endl;
@@ -833,6 +834,10 @@ void RemoteRing::run_server_disk(string buckets_path){
 
 						data = new unsigned char[ctx_block_size];
 						ssize_t read_size = read(bucket_file, data, ctx_block_size);
+						auto end_read = std::chrono::high_resolution_clock::now();
+						io_time += (end_read - start_read);
+						online_io_time += (end_read - start_read);
+
 						if(read_size != ctx_block_size){
 							cerr << "Error reading from bucket file: " << buckets_path << endl;
 							exit(EXIT_FAILURE);
@@ -850,7 +855,6 @@ void RemoteRing::run_server_disk(string buckets_path){
 					}
 					
 				}
-				auto end_read = std::chrono::high_resolution_clock::now();
 
 
 				long comm = io->counter;
@@ -860,9 +864,6 @@ void RemoteRing::run_server_disk(string buckets_path){
 				
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
-
-				io_time += (end_read - start_read);
-				online_io_time += (end_read - start_read);
 
 				io->send_data(&comm, sizeof(long));
 				io->counter -= sizeof(long);
