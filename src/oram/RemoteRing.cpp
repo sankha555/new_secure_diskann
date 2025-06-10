@@ -413,6 +413,7 @@ void RemoteRing::run_server_memory(){
 				size_t num_real_blocks;
 				io->recv_data(&num_blocks, sizeof(size_t));
 				io->recv_data(&num_real_blocks, sizeof(size_t));
+				cout << "Num real blocks: " << num_blocks << ", num blocks: " << num_real_blocks << "\n";
 
 				client_to_server += 2*sizeof(size_t);
 				oram_comm += 2*sizeof(size_t);
