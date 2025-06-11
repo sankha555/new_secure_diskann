@@ -265,6 +265,10 @@ void RemoteRing::load_server_hash(const char* fname){
 void RemoteRing::run_server_memory(){
 	// cout << "Remote storage server running ..." << endl;
     
+    std::chrono::duration<double> user_server_side_time;
+    std::chrono::duration<double> total_server_side_time;
+	
+
 	long server_to_client = 0;
 	long client_to_server = 0;
 	long oram_comm = 0;
@@ -273,6 +277,8 @@ void RemoteRing::run_server_memory(){
 	long long_term_comm = 0;
 
 	while(1) {
+        auto st_q = std::chrono::high_resolution_clock::now();
+
 		int rt;
 		io->recv_data(&rt, sizeof(int));
 		client_to_server += sizeof(int);
@@ -575,21 +581,28 @@ void RemoteRing::run_server_memory(){
 				break;
 			}
 			case End:{
-				cout << "Remote storage server closing ..." << "\n";
-				cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
-				cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
-				cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
-				cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
-				cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
+				// cout << "Remote storage server closing ..." << "\n";
+				// cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
+				// cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
+				// cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
+				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
+				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
+				cout << "User Time Spent at Server: " << user_server_side_time.count() << " seconds \n";
+				cout << "Total Time Spent at Server: " << total_server_side_time.count() << "seconds \n";
 
 				return;
 			}
 			default:{
 				assert(0);
 			}
-			
+		
 		}
+        auto en_q = std::chrono::high_resolution_clock::now();
+		if(rt == ReadBatchBlockXor || rt == ReadBatchBlock_R || rt == WriteBatch_R){
+			user_server_side_time += (en_q - st_q);
+		} 
+		total_server_side_time += (en_q - st_q);
 	}
 }
 

@@ -133,6 +133,18 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
+    
+    if(md.use_oram){
+        const long long* dummy_data = new long long[1000000]; 
+        long comm = io->counter;
+        for(int i = 0; i < 500; i++){
+            io->send_data(dummy_data, 1000000 * sizeof(long long));
+            cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
+        }
+        cout << "\n";
+        io->counter = comm;   
+    }
+
     double t0 = elapsed();
     tprint("Starting remote server... \n", t0);
 

@@ -1766,7 +1766,7 @@ void OramIndex<T, LabelT>::oram_read(
     vector<DiskANNNode<T, LabelT>*> fetched_nodes = oram->oram_access<T, LabelT>(node_ids, beam_width);
     auto e = std::chrono::high_resolution_clock::now();    
 
-    stats->communication_time += (e - s);
+    stats->oram_wait_time += (e - s);
 
     map<node_id_t, DiskANNNode<T, LabelT>*> node_map;
     for (auto &node : fetched_nodes) {

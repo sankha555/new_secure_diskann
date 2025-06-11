@@ -136,17 +136,18 @@ struct DiskANNInterface {
 
         double best_recall = 0.0, best_mrr = 0.0;
 
-        if(use_oram && 0){
-            int op = -2;
-            io->send_data(&op, sizeof(int));
-            const long long* dummy_data = new long long[1000000]; 
-            long comm = io->counter;
-            for(int i = 0; i < 1000; i++){
-                io->send_data(dummy_data, 1000000 * sizeof(long long));
-                cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
+        if(use_oram){
+            for(int i = 0; i < 500; i++){
+                long long* dummy_data = new long long[1000000]; 
+                io->recv_data(dummy_data, 1000000 * sizeof(long long));
+                delete[] dummy_data;
             }
-            io->counter = comm;   
         }
+
+        auto total_user_perceived_time = 0;
+        auto total_e2e_time = 0;
+        auto total_local_compute_time = 0;
+        auto total_oram_wait_time = 0;
 
         for (uint32_t test_id = 0; test_id < Lvec.size(); test_id++)
         {
@@ -172,7 +173,6 @@ struct DiskANNInterface {
             {
                 if(use_oram){
                     auto st_q = std::chrono::high_resolution_clock::now();
-
                     _pFlashIndex->cached_beam_search_with_oram(
                         query + (i * query_aligned_dim),
                         recall_at, 
@@ -187,6 +187,10 @@ struct DiskANNInterface {
                         stats + i,
                         oram_api
                     );
+                    auto en_q = std::chrono::high_resolution_clock::now();
+
+                    (stats + i)->user_perceived_time = (en_q - st_q);
+                    (stats + i)->local_compute_time = (stats + i)->user_perceived_time - (stats+i)->oram_wait_time;
 
                     // Eviction
                     auto st_ev = std::chrono::high_resolution_clock::now();
@@ -264,11 +268,17 @@ struct DiskANNInterface {
                                                                                         [](const diskann::QueryStats &stats) { return stats.total_us; });                                                         
 
 
-                    auto total_user_perceived_time = diskann::get_total_stats<float>(stats, query_num,
+                    total_user_perceived_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.user_perceived_time.count(); });                                                         
 
+                    total_local_compute_time = diskann::get_total_stats<float>(stats, query_num,
+                                                                [](const diskann::QueryStats &stats) { return stats.local_compute_time.count(); });
 
-                    auto total_e2e_time = diskann::get_total_stats<float>(stats, query_num,
+                    total_oram_wait_time = diskann::get_total_stats<float>(stats, query_num,
+                                                                [](const diskann::QueryStats &stats) { return stats.oram_wait_time.count(); });
+
+
+                    total_e2e_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.e2e_time.count(); });                                                         
 
 
@@ -349,6 +359,15 @@ struct DiskANNInterface {
         if(use_oram){
             cout << "Executed " << ((OramRing*)oram_api->oram)->num_reshuffles << " early reshuffles." << endl;
             cout << "Executed " << oram_api->oram_calls << " oram calls." << endl;
+        }
+
+        if(use_oram) {
+            cout << "\n\n";
+            cout << "Avg. Perceived Latency: " << total_user_perceived_time*1.0/(query_num) << "\n";
+            cout << "Avg. E2E Latency: " << total_e2e_time*1.0/(query_num) << "\n";
+            cout << "Avg. Local Compute Time: " << total_local_compute_time*1.0/(query_num) << "\n";
+            cout << "Avg. ORAM Wait Time: " << total_oram_wait_time*1.0/(query_num) << "\n";
+            cout << "\n\n";
         }
 
         return best_recall >= fail_if_recall_below ? 0 : -1;
