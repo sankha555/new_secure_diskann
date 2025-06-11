@@ -265,10 +265,9 @@ void RemoteRing::load_server_hash(const char* fname){
 void RemoteRing::run_server_memory(){
 	// cout << "Remote storage server running ..." << endl;
     
-    std::chrono::duration<double> user_server_side_time;
-    std::chrono::duration<double> total_server_side_time;
+  std::chrono::duration<double> user_server_side_time;
+  std::chrono::duration<double> total_server_side_time;
 	
-
 	long server_to_client = 0;
 	long client_to_server = 0;
 	long oram_comm = 0;
@@ -277,10 +276,10 @@ void RemoteRing::run_server_memory(){
 	long long_term_comm = 0;
 
 	while(1) {
-        auto st_q = std::chrono::high_resolution_clock::now();
-
 		int rt;
 		io->recv_data(&rt, sizeof(int));
+		
+    auto st_q = std::chrono::high_resolution_clock::now();
 		client_to_server += sizeof(int);
 		if(rt == ReadBatchBlock_R || rt == WriteBatch_R){
 			reshuffling_comm += sizeof(int);
