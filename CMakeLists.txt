@@ -23,9 +23,9 @@ target_include_directories(client PRIVATE ${CMAKE_SOURCE_DIR}/src/diskann ${CMAK
 target_link_libraries(oram_initializer PRIVATE oram_library argmap rapidjson Boost::program_options diskann aio)
 
 # Optionally added for testing, to remove later
-add_executable(measure_commn_client ./src/measure_commn_client.cpp)
-target_include_directories(measure_commn_client PRIVATE ${CMAKE_SOURCE_DIR}/src/diskann ${CMAKE_SOURCE_DIR}/src/diskann/include)
-target_link_libraries(measure_commn_client PRIVATE oram_library argmap rapidjson Boost::program_options diskann aio)
+# add_executable(measure_commn_client ./src/measure_commn_client.cpp)
+# target_include_directories(measure_commn_client PRIVATE ${CMAKE_SOURCE_DIR}/src/diskann ${CMAKE_SOURCE_DIR}/src/diskann/include)
+# target_link_libraries(measure_commn_client PRIVATE oram_library argmap rapidjson Boost::program_options diskann aio)
 
-add_executable(measure_commn_server ./src/measure_commn_server.cpp)
-target_link_libraries(measure_commn_server PRIVATE oram_library argmap rapidjson)
+# add_executable(measure_commn_server ./src/measure_commn_server.cpp)
+# target_link_libraries(measure_commn_server PRIVATE oram_library argmap rapidjson)
