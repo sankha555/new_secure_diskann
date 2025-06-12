@@ -227,6 +227,7 @@ int main(int argc, char** argv){
         std::chrono::duration<double> total_duration;
 
         if(argc == 8 && !strcmp(argv[7], "-p")){
+            cout << "Awaiting preamble\n";
             long req = -2;
             io->send_data(&req, sizeof(long));
             for(int i = 0; i < 1000; i++){
@@ -278,6 +279,7 @@ int main(int argc, char** argv){
                 cout << "Sent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
 
                 comm = io->counter;
+                continue;
             }
 
             if(quantum == -1){
