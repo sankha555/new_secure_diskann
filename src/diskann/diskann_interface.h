@@ -146,6 +146,11 @@ struct DiskANNInterface {
         }
         io->counter = comm;
 
+
+        auto total_oram_wait_time = 0;
+        auto total_user_perceived_time = 0;
+        auto total_e2e_time = 0;
+
         for (uint32_t test_id = 0; test_id < Lvec.size(); test_id++)
         {
             uint32_t L = Lvec[test_id];
@@ -262,13 +267,16 @@ struct DiskANNInterface {
                                                                                         [](const diskann::QueryStats &stats) { return stats.total_us; });                                                         
 
 
-                    auto total_user_perceived_time = diskann::get_total_stats<float>(stats, query_num,
+                    total_user_perceived_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.user_perceived_time.count(); });                                                         
 
 
-                    auto total_e2e_time = diskann::get_total_stats<float>(stats, query_num,
+                    total_e2e_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.e2e_time.count(); });                                                         
 
+
+                    total_oram_wait_time = diskann::get_total_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.oram_wait_time.count(); });  
 
                     double recall = 0, mrr = 0;
                     recall = diskann::calculate_recall((uint32_t)query_num, gt_ids, gt_dists, (uint32_t)gt_dim,
@@ -347,6 +355,13 @@ struct DiskANNInterface {
             cout << "Executed " << ((OramRing*)oram_api->oram)->num_reshuffles << " early reshuffles." << endl;
             cout << "Executed " << oram_api->oram_calls << " oram calls." << endl;
             // cout << "Communication time = " << .count() << "\n";
+        }
+
+        if(use_oram){
+            cout << "\n\n";
+            cout << "E2E Time: " << total_e2e_time*1.0/(query_num)*1000 << " ms\n";
+            cout << "Online Time: " << total_user_perceived_time*1.0/(query_num)*1000 << " ms\n";
+            cout << "ORAM Wait Time: " << total_oram_wait_time*1.0/(query_num)*1000 << " ms (" << total_oram_wait_time*100.0/total_user_perceived_time << " %)\n";
         }
 
         return best_recall >= fail_if_recall_below ? 0 : -1;

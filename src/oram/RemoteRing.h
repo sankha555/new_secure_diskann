@@ -7,6 +7,9 @@
 #include <cmath>
 #include <sstream>
 #include <map>
+#include <chrono>
+
+#include "diskann/include/percentile_stats.h"
 
 class RemoteRing {
 
@@ -66,6 +69,8 @@ public:
     long server_comm_for_oram_access = 0;
     long server_comm_for_reshuffles = 0;
     long server_comm_for_evictions = 0;
+
+    diskann::QueryStats* current_query_stats;
 
 private:
 

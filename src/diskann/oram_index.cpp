@@ -1755,18 +1755,14 @@ void OramIndex<T, LabelT>::oram_read(
     int beam_width,
     QueryStats* stats
 ){
+    ((RemoteRing*) ((OramRing*) oram->oram)->storage)->current_query_stats = stats;
+
     vector<node_id_t> node_ids;
     for (auto &node : frontier_nhoods) {
         node_ids.push_back((node_id_t)node.first);
-        // cout << node.first << " ";
     }
-    // cout << "\n";
     
-    auto s = std::chrono::high_resolution_clock::now();    
     vector<DiskANNNode<T, LabelT>*> fetched_nodes = oram->oram_access<T, LabelT>(node_ids, beam_width);
-    auto e = std::chrono::high_resolution_clock::now();    
-
-    stats->oram_wait_time += (e - s);
 
     map<node_id_t, DiskANNNode<T, LabelT>*> node_map;
     for (auto &node : fetched_nodes) {
