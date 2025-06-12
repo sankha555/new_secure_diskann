@@ -266,24 +266,25 @@ int main(int argc, char** argv){
     } else {
         long comm = io->counter;
         long quantum = 0;
-        io->recv_data(&quantum, sizeof(long));
-
-        if(quantum == -2){
-            // preamble
-            const unsigned char* dummy_data = new unsigned char[100000000]; 
-            long comm = io->counter;
-            for(int i = 0; i < 10; i++){
-                io->send_data(dummy_data, 100000000 * sizeof(unsigned char));
-                cout << "\rPreamble chunk " << i+1 << " sent" << std::flush;
-            }
-            cout << "\nSent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
-
-            comm = io->counter;
-        }
 
         while (true) {
             quantum = 0;
             io->recv_data(&quantum, sizeof(long));
+
+            if(quantum == -2){
+                // preamble
+                const unsigned char* dummy_data = new unsigned char[8000000000]; 
+                long comm = io->counter;
+                for(int i = 0; i < 1; i++){
+                    io->send_data(dummy_data, 8000000000 * sizeof(unsigned char));
+                    cout << "\rPreamble chunk " << i+1 << " sent" << std::flush;
+                }
+                cout << "\nSent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
+
+                io->counter = comm;
+                continue;
+            }
+
             if(quantum == -1){
                 long total_data = io->counter - comm;
                 io->send_data(&total_data, sizeof(long));
