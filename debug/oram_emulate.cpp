@@ -241,18 +241,25 @@ int main(int argc, char** argv){
             total_duration += (en_round - st_round);
         }
 
-        cout << "Total time = " << total_duration.count()*1000 << " ms\n";
-        cout << "Eff. Bandwidth = " << data_len*sizeof(char)*8.0/(1024*1024*1024*total_duration.count()) << " Gbit/s\n";
-
         quantum = -1;
         io->send_data(&quantum, sizeof(long));
+        io->recv_data(&quantum, sizeof(long));
+
+        cout << "Total data = " << quantum*1.0/(1024*1024) << " MB\n";
+        cout << "Total time = " << total_duration.count()*1000 << " ms\n";
+        cout << "Eff. Bandwidth = " << quantum*8.0/(1024*1024*1024*total_duration.count()) << " Gbit/s\n";
+
     } else {
-        
+        long comm = io->counter;
         while (true) {
             long quantum = 0;
             io->recv_data(&quantum, sizeof(long));
 
             if(quantum == -1){
+                long total_data = io->counter - comm;
+                io->send_data(&total_data, sizeof(long));
+
+                cout << "Total Data Communicated = " << total_data << "\n"; 
                 cout << "Closing server...\n";
                 return 0;
             }
