@@ -188,11 +188,12 @@ public:
 };
 
 
+using namespace std;
 
 int main(int argc, char** argv){
     char* ip = nullptr;
     bool is_client = false;
-    if(argv[1] == "-c"){
+    if(!strcmp(argv[1], "-c")){
         is_client = true;
         ip = argv[2];
     }
@@ -241,7 +242,7 @@ int main(int argc, char** argv){
         }
 
         cout << "Total time = " << total_duration.count()*1000 << " ms\n";
-        cout << "Eff. Bandwidth = " << data_len*sizeof(char)*8.0/(1024*1024*1024*total_duration.count()) << " Gbit/s";
+        cout << "Eff. Bandwidth = " << data_len*sizeof(char)*8.0/(1024*1024*1024*total_duration.count()) << " Gbit/s\n";
 
         quantum = -1;
         io->send_data(&quantum, sizeof(long));
