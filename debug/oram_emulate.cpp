@@ -190,7 +190,7 @@ public:
 
 
 int main(int argc, char** argv){
-    string ip = nullptr;
+    char* ip = nullptr;
     bool is_client = false;
     if(argv[1] == "-c"){
         is_client = true;
@@ -198,13 +198,13 @@ int main(int argc, char** argv){
     }
 
     // initiate socket connection
-    NetIO* io = new NetIO(ip.c_str(), 8000, false, true);
+    NetIO* io = new NetIO(ip, 8000, false, true);
     if (!io) {
         cerr << "Error: Failed to initialize NetIO for main connection." << endl;
         exit(EXIT_FAILURE);
     }
 
-    cout << "Connection Established with " << (is_client ? "server at " + ip : "client") << "\n";
+    cout << "Connection Established with " << (is_client ? ip : "client") << "\n";
 
 
     if(is_client){
