@@ -284,14 +284,7 @@ int main(int argc, char** argv){
                 io->counter = comm;
                 continue;
             }
-            cout << "\nSent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
 
-            comm = io->counter;
-        }
-
-        while (true) {
-            quantum = 0;
-            io->recv_data(&quantum, sizeof(long));
             if(quantum == -1){
                 long total_data = io->counter - comm;
                 io->send_data(&total_data, sizeof(long));
