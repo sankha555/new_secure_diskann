@@ -220,7 +220,7 @@ int main(int argc, char** argv){
     if(is_client){
         int rounds = std::stoi(argv[4]);
 
-        long data_len = 1000000;    // bytes
+        long data_len = std::stol(argv[6]);    // no. of bytes
 
         long quantum = data_len/rounds;
         
@@ -259,7 +259,7 @@ int main(int argc, char** argv){
                 long total_data = io->counter - comm;
                 io->send_data(&total_data, sizeof(long));
 
-                cout << "Total Data Communicated = " << total_data << "\n"; 
+                cout << "Total Data Communicated = " << total_data*1.0/(1024*1024) << " MB \n"; 
                 cout << "Closing server...\n";
                 return 0;
             }
