@@ -226,6 +226,17 @@ int main(int argc, char** argv){
         
         std::chrono::duration<double> total_duration;
 
+        if(argc == 8 && !strcmp(argv[7], "-p")){
+            long req = -2;
+            io->send_data(&req, sizeof(long));
+            for(int i = 0; i < 1000; i++){
+                unsigned char* data = new unsigned char[8000000];
+                io->recv_data(data, quantum*sizeof(char));
+                delete[] data;
+            }
+        }
+
+        cout << "--------------------------------------------------------------------\n";
         for(int r = 0; r < rounds; r++){
             auto st_round = std::chrono::high_resolution_clock::now();    
             
@@ -245,6 +256,7 @@ int main(int argc, char** argv){
         io->send_data(&quantum, sizeof(long));
         io->recv_data(&quantum, sizeof(long));
 
+        cout << "--------------------------------------------------------------------\n";
         cout << "Total data = " << quantum*1.0/(1024*1024) << " MB\n";
         cout << "Total time = " << total_duration.count()*1000 << " ms\n";
         cout << "Eff. Bandwidth = " << quantum*8.0/(1024*1024*1024*total_duration.count()) << " Gbit/s\n";
@@ -254,6 +266,18 @@ int main(int argc, char** argv){
         while (true) {
             long quantum = 0;
             io->recv_data(&quantum, sizeof(long));
+
+            if(quantum == -2){
+                // preamble
+                for(int i = 0; i < 1000; i++){
+                    unsigned char* data = new unsigned char[8000000];
+                    io->send_data(data, quantum*sizeof(char));
+                    delete[] data;
+                }
+                cout << "Sent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
+
+                comm = io->counter;
+            }
 
             if(quantum == -1){
                 long total_data = io->counter - comm;
