@@ -227,14 +227,15 @@ int main(int argc, char** argv){
         std::chrono::duration<double> total_duration;
 
         if(argc == 8 && !strcmp(argv[7], "-p")){
-            cout << "Awaiting preamble\n";
-            long req = -2;
-            io->send_data(&req, sizeof(long));
-            for(int i = 0; i < 1000; i++){
-                unsigned char* data = new unsigned char[8000000];
-                io->recv_data(data, quantum*sizeof(char));
-                delete[] data;
-            }
+          long req = -2;
+          unsigned char* data = new unsigned char[8000000000];
+
+          io->send_data(&req, sizeof(long));
+          for(int i = 0; i < 1; i++){
+            //   cout << "i = " << i << "\n";
+              io->recv_data(data, 8000000000*sizeof(char));
+          }
+          delete[] data;
         }
 
         cout << "--------------------------------------------------------------------\n";
@@ -264,24 +265,25 @@ int main(int argc, char** argv){
 
     } else {
         long comm = io->counter;
-        while (true) {
-            long quantum = 0;
-            io->recv_data(&quantum, sizeof(long));
+        long quantum = 0;
+        io->recv_data(&quantum, sizeof(long));
 
-            if(quantum == -2){
-                // preamble
-                for(int i = 0; i < 1000; i++){
-                    unsigned char* data = new unsigned char[8000000];
-                    io->send_data(data, quantum*sizeof(char));
-                    delete[] data;
-                    cout << "\rPreamble chunk " << i+1 << std::flush;
-                }
-                cout << "Sent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
-
-                comm = io->counter;
-                continue;
+        if(quantum == -2){
+            // preamble
+            const unsigned char* dummy_data = new unsigned char[100000000]; 
+            long comm = io->counter;
+            for(int i = 0; i < 10; i++){
+                io->send_data(dummy_data, 100000000 * sizeof(unsigned char));
+                cout << "\rPreamble chunk " << i+1 << " sent" << std::flush;
             }
+            cout << "\nSent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
 
+            comm = io->counter;
+        }
+
+        while (true) {
+            quantum = 0;
+            io->recv_data(&quantum, sizeof(long));
             if(quantum == -1){
                 long total_data = io->counter - comm;
                 io->send_data(&total_data, sizeof(long));
