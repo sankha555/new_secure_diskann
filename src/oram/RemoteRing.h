@@ -71,6 +71,7 @@ public:
     long server_comm_for_evictions = 0;
 
     diskann::QueryStats* current_query_stats;
+    std::chrono::duration<double> online_server_side_time;
 
 private:
 

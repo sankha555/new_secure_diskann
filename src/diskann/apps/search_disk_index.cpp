@@ -130,6 +130,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
     node_list.shrink_to_fit();
 
     omp_set_num_threads(num_threads);
+    cout << omp_get_num_threads() << " threads\n\n\n";
 
     uint64_t warmup_L = 20;
     uint64_t warmup_num = 0, warmup_dim = 0, warmup_aligned_dim = 0;

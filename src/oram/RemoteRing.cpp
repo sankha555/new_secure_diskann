@@ -307,16 +307,6 @@ void RemoteRing::run_server_memory(){
 				break;
 			}
 
-			case Read:{
-                // Legacy branch, disabled
-				assert(0);
-				break;
-			}
-			case Write:{
-                // Legacy branch, disabled
-				assert(0);
-				break;
-			}
 			case ReadBatchBlock_R:
 			case ReadBatchBlock: {
 				size_t num_blocks;
@@ -329,13 +319,13 @@ void RemoteRing::run_server_memory(){
 				} else {
 					eviction_comm += sizeof(size_t);
 				}
-
-				// auto t_fetch = std::chrono::high_resolution_clock::now();
 				
 				std::vector<int> position(num_blocks);
 				std::vector<int> offset(num_blocks);
 				io->recv_data(position.data(), sizeof(int)*num_blocks);
 				io->recv_data(offset.data(), sizeof(int)*num_blocks);
+
+				auto lts = std::chrono::high_resolution_clock::now();
 
 				client_to_server += 2*sizeof(int)*num_blocks;
 				if(rt == ReadBatchBlock_R){
@@ -359,6 +349,9 @@ void RemoteRing::run_server_memory(){
 				} 
 
 				// cout << "ReadBucketBatch write to payload done" << endl;
+				if(rt == ReadBatchBlock_R){
+					online_server_side_time += (std::chrono::high_resolution_clock::now() - lts);
+				}
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
@@ -371,8 +364,8 @@ void RemoteRing::run_server_memory(){
 					eviction_comm += sizeof(unsigned char)*len;
 				}
 
-				io->send_data(&comm, sizeof(long));
-				io->counter -= sizeof(long);
+				// io->send_data(&comm, sizeof(long));
+				// io->counter -= sizeof(long);
 
 				if(integrity){
 					if(rt == ReadBatchBlock){
@@ -406,6 +399,8 @@ void RemoteRing::run_server_memory(){
 				std::vector<int> offset(num_blocks);
 				io->recv_data(position.data(), sizeof(int)*num_blocks);
 				io->recv_data(offset.data(), sizeof(int)*num_blocks);
+
+				auto lts = std::chrono::high_resolution_clock::now();
 
 				client_to_server += 2*sizeof(int)*num_blocks;
 				oram_comm += 2*sizeof(int)*num_blocks;
@@ -442,6 +437,8 @@ void RemoteRing::run_server_memory(){
 					
 				}
 
+				online_server_side_time += (std::chrono::high_resolution_clock::now() - lts);
+
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
 				io->send_data(ivs, sizeof(unsigned char)*num_blocks*16);
@@ -450,8 +447,8 @@ void RemoteRing::run_server_memory(){
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 
-				io->send_data(&comm, sizeof(long));
-				io->counter -= sizeof(long);
+				// io->send_data(&comm, sizeof(long));
+				// io->counter -= sizeof(long);
 
 				if(integrity){
 					send_hash(position, offset);
@@ -461,43 +458,6 @@ void RemoteRing::run_server_memory(){
 
 				delete[] payload;
 
-				break;
-			}
-			case WriteBatchBlock:{
-				assert(0);
-				break;
-			}
-			case ReadBatch:{
-
-				assert(0);
-
-				size_t num_buckets;
-				io->recv_data(&num_buckets, sizeof(size_t));
-
-				// auto t_fetch = std::chrono::high_resolution_clock::now();
-				
-				std::vector<int> position(num_buckets);
-				io->recv_data(position.data(), sizeof(int)*num_buckets);
-
-				size_t len = num_buckets * bucket_size * (ctx_block_size);
-				// cout << "ReadBucketBatch allocate payload for size: " << len << endl;
-				unsigned char* payload = new unsigned char[len];
-				// cout << "ReadBucketBatch allocate done" << endl;
-
-				#pragma omp parallel for num_threads(NUM_THREADS)
-				for(size_t bucket_id = 0; bucket_id < num_buckets; bucket_id++){
-					for(size_t block_id = 0; block_id < bucket_size; block_id++){
-						size_t block_pos = position[bucket_id]*bucket_size + block_id;
-						size_t block_offset = (bucket_id*bucket_size + block_id) * ctx_block_size;
-						// this->buckets[block_pos]->data_to_ptr(payload + block_offset);
-						unsigned char* tmp_data = data + block_pos*ctx_block_size;
-						mempcpy(payload + block_offset, tmp_data, ctx_block_size);
-					}
-				} 
-
-				io->send_data(payload, sizeof(unsigned char)*len);
-
-				delete[] payload;
 				break;
 			}
 			case WriteBatch_R:
@@ -555,40 +515,14 @@ void RemoteRing::run_server_memory(){
 					} else{
 						update_hash_reshuffle(position, payload);
 					}
-					// size_t hash_payload_size = position.size() * per_bucket_hashes * SHA256_DIGEST_LENGTH;
-					// uint8_t* hash_payload = new uint8_t[hash_payload_size];
-					// io->recv_data(hash_payload, hash_payload_size);
-					// #pragma omp parallel for num_threads(NUM_THREADS)
-					// for(size_t i = 0 ; i < position.size(); i++){
-					// 	memcpy(
-					// 		per_bucket_hash + position[i] * per_bucket_hashes * SHA256_DIGEST_LENGTH,
-					// 		hash_payload + i * per_bucket_hashes * SHA256_DIGEST_LENGTH,
-					// 		per_bucket_hashes * SHA256_DIGEST_LENGTH
-					// 	);
-					// }
-					// delete[] hash_payload;
 				}
 				
 				delete[] payload;
 				break;
 			}
 			
-			case Init:{
-				cout << "Remote storage server Initializing ..." ;
-				assert(0);
-				cout << " done!" << endl;
-				break;
-			}
 			case End:{
-				// cout << "Remote storage server closing ..." << "\n";
-				// cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
-				// cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
-				// cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
-				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
-				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
-
-				cout << "User Time Spent at Server: " << user_server_side_time.count() << " seconds \n";
-				cout << "Total Time Spent at Server: " << total_server_side_time.count() << "seconds \n";
+				cout << "Online time spent at server: " << online_server_side_time.count()*1000 << " ms\n";
 
 				return;
 			}
@@ -597,11 +531,6 @@ void RemoteRing::run_server_memory(){
 			}
 		
 		}
-        auto en_q = std::chrono::high_resolution_clock::now();
-		if(rt == ReadBatchBlockXor || rt == ReadBatchBlock_R || rt == WriteBatch_R){
-			user_server_side_time += (en_q - st_q);
-		} 
-		total_server_side_time += (en_q - st_q);
 	}
 }
 
@@ -618,7 +547,7 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 	
 	int rt = isReshuffle ? ReadBatchBlock_R : ReadBatchBlock;
 
-    auto lts = std::chrono::high_resolution_clock::now();
+  auto lts = std::chrono::high_resolution_clock::now();
 	io->send_data(&rt, sizeof(int));
 
 	size_t num_blocks = positions.size();
@@ -642,7 +571,7 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 		comm_for_evictions += (sizeof(int) + sizeof(size_t) + 2*sizeof(int)*num_blocks);
 	}
 
-	io->recv_data(&comm, sizeof(long));
+	// io->recv_data(&comm, sizeof(long));
 	if(isReshuffle){
 		server_comm_for_reshuffles += len;
 	} else {
@@ -741,8 +670,8 @@ void RemoteRing::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions,
 	rounds_for_oram_access += (io->num_rounds - rounds);
 	comm_for_oram_access += (io->counter - comm);
 
-	io->recv_data(&comm, sizeof(long));
-	server_comm_for_oram_access += comm;
+	// io->recv_data(&comm, sizeof(long));
+	// server_comm_for_oram_access += comm;
 
     std::chrono::duration<double> oram_read_wait_time = (std::chrono::high_resolution_clock::now() - lts);
 	this->current_query_stats->oram_wait_time += oram_read_wait_time;
