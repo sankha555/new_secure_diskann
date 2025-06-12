@@ -197,11 +197,20 @@ int main(int argc, char** argv){
         ip = argv[2];
     }
 
+    NetIO* io;
     // initiate socket connection
-    NetIO* io = new NetIO(ip, 8000, false, true);
-    if (!io) {
-        cerr << "Error: Failed to initialize NetIO for main connection." << endl;
-        exit(EXIT_FAILURE);
+    if(is_client){
+        io = new NetIO(ip, 8000, false, true);
+        if (!io) {
+            cerr << "Error: Failed to initialize NetIO for main connection." << endl;
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        io = new NetIO(nullptr, 8000, false, true);
+        if (!io) {
+            cerr << "Error: Failed to initialize NetIO for main connection." << endl;
+            exit(EXIT_FAILURE);
+        }
     }
 
     cout << "Connection Established with " << (is_client ? ip : "client") << "\n";
