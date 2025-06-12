@@ -273,6 +273,7 @@ int main(int argc, char** argv){
                     unsigned char* data = new unsigned char[8000000];
                     io->send_data(data, quantum*sizeof(char));
                     delete[] data;
+                    cout << "\rPreamble chunk " << i+1 << std::flush;
                 }
                 cout << "Sent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
 
