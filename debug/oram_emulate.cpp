@@ -228,12 +228,12 @@ int main(int argc, char** argv){
 
         if(argc == 8 && !strcmp(argv[7], "-p")){
           long req = -2;
-          unsigned char* data = new unsigned char[1000000];
+          unsigned char* data = new unsigned char[8000000000];
 
           io->send_data(&req, sizeof(long));
-          for(int i = 0; i < 1000; i++){
+          for(int i = 0; i < 1; i++){
             //   cout << "i = " << i << "\n";
-              io->recv_data(data, 1000000*sizeof(char));
+              io->recv_data(data, 8000000000*sizeof(char));
           }
           delete[] data;
         }
@@ -284,7 +284,14 @@ int main(int argc, char** argv){
                 io->counter = comm;
                 continue;
             }
+            cout << "\nSent a preamble of size " << (io->counter - comm)*1.0/(1024*1024*1024) << " GB\n";
 
+            comm = io->counter;
+        }
+
+        while (true) {
+            quantum = 0;
+            io->recv_data(&quantum, sizeof(long));
             if(quantum == -1){
                 long total_data = io->counter - comm;
                 io->send_data(&total_data, sizeof(long));
