@@ -16,7 +16,7 @@
 
 #include "evp.h"
 
-#define NUM_THREADS 4
+#define NUM_THREADS 8
 #define SHA256_DIGEST_LENGTH 32
 
 enum RequestType {
@@ -364,8 +364,8 @@ void RemoteRing::run_server_memory(){
 					eviction_comm += sizeof(unsigned char)*len;
 				}
 
-				// io->send_data(&comm, sizeof(long));
-				// io->counter -= sizeof(long);
+				io->send_data(&comm, sizeof(long));
+				io->counter -= sizeof(long);
 
 				if(integrity){
 					if(rt == ReadBatchBlock){
@@ -447,8 +447,8 @@ void RemoteRing::run_server_memory(){
 				server_to_client += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 				oram_comm += sizeof(unsigned char)*len + sizeof(unsigned char)*num_blocks*16;
 
-				// io->send_data(&comm, sizeof(long));
-				// io->counter -= sizeof(long);
+				io->send_data(&comm, sizeof(long));
+				io->counter -= sizeof(long);
 
 				if(integrity){
 					send_hash(position, offset);
@@ -466,6 +466,7 @@ void RemoteRing::run_server_memory(){
 				size_t num_buckets;
 
 				io->recv_data(&num_buckets, sizeof(size_t));
+				auto lts = std::chrono::high_resolution_clock::now();
 
 				client_to_server += sizeof(size_t);
 				if(rt == WriteBatch_R){
@@ -571,7 +572,7 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 		comm_for_evictions += (sizeof(int) + sizeof(size_t) + 2*sizeof(int)*num_blocks);
 	}
 
-	// io->recv_data(&comm, sizeof(long));
+	io->recv_data(&comm, sizeof(long));
 	if(isReshuffle){
 		server_comm_for_reshuffles += len;
 	} else {
@@ -670,8 +671,8 @@ void RemoteRing::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions,
 	rounds_for_oram_access += (io->num_rounds - rounds);
 	comm_for_oram_access += (io->counter - comm);
 
-	// io->recv_data(&comm, sizeof(long));
-	// server_comm_for_oram_access += comm;
+	io->recv_data(&comm, sizeof(long));
+	server_comm_for_oram_access += comm;
 
     std::chrono::duration<double> oram_read_wait_time = (std::chrono::high_resolution_clock::now() - lts);
 	this->current_query_stats->oram_wait_time += oram_read_wait_time;
