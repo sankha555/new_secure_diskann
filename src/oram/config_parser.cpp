@@ -253,6 +253,14 @@ int parseJson(string config_path, Metadata &md, string dataset){
             cerr << "Parse error: hash_path not found or invalid format" << endl;
             return 1;
         }
+
+        
+        if(val.HasMember("--query_nums") && val["--query_nums"].IsInt64()){
+            md.num_queries = val["--query_nums"].GetInt64();
+        } else{
+            cerr << "Parse error: --query_nums not found or invalid format" << endl;
+            return 1;
+        }
     }
 
     return 0;

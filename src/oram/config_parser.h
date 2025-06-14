@@ -21,6 +21,7 @@ struct Metadata {
     int large_number;
     bool use_oram;
     bool debug;
+    long num_queries;
 
     int ef_search;
     int ef_spec;

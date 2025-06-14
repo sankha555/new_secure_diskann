@@ -118,22 +118,22 @@ int main(int argc, char **argv) {
     OramAPI* oram_api = nullptr;
     if (md.use_oram){
         oram_api = new OramAPI(
-                rss,
-                random,
-                config.num_blocks,
-                md.num_levels,
-                md.oram_cached_levels,
-                config.block_size,
-                config.real_bucket_size,
-                config.dummy_size,
-                config.evict_rate,
-                md.block_map_path,
-                md.metadata_path,
-                md.pos_map_path,
-                md.debug,
-                md.large_number,
-                config
-            );
+            rss,
+            random,
+            config.num_blocks,
+            md.num_levels,
+            md.oram_cached_levels,
+            config.block_size,
+            config.real_bucket_size,
+            config.dummy_size,
+            config.evict_rate,
+            md.block_map_path,
+            md.metadata_path,
+            md.pos_map_path,
+            md.debug,
+            md.large_number,
+            config
+        );
     }
     
 
@@ -164,7 +164,7 @@ int main(int argc, char **argv) {
     rss->close_server();
 
     if (md.use_oram) {
-        print_communication_metrics(io, comm, rounds, rss, rss->rounds_for_oram_access,rss->rounds_for_reshuffles, rss->rounds_for_evictions);
+        print_communication_metrics(md.num_queries, io, comm, rounds, rss, rss->rounds_for_oram_access,rss->rounds_for_reshuffles, rss->rounds_for_evictions);
     }
 
     delete oram_api;

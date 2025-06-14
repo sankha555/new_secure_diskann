@@ -71,31 +71,114 @@ void ivecs_write(const char* fname, int* data, size_t d, size_t n) {
     fvecs_write(fname, (float*)data, d, n);
 }
 
-void print_communication_metrics(NetIO* io, long c2s_comm, long c2s_round, RemoteRing* rss, int oram_rounds, int reshuffle_rounds, int eviction_rounds) {
+void print_communication_metrics(long num_queries, NetIO* io, long c2s_comm, long c2s_round, RemoteRing* rss, int oram_rounds, int reshuffle_rounds, int eviction_rounds) {
     long s2c_comm, s2c_round;
     io->recv_data(&s2c_comm, sizeof(long));
     io->recv_data(&s2c_round, sizeof(long));
 
-    std::cout << std::endl;
-    std::cout << "Total communication: " << (c2s_comm + s2c_comm)*1.0/(1024*1024) << " MB" << std::endl;
-    std::cout << "---> Client-to-Server: " << c2s_comm*1.0/(1024*1024) << " MB" << std::endl;
-    std::cout << "---> Server-to-Client: " << s2c_comm*1.0/(1024*1024) << " MB" << std::endl;
-    std::cout << "---> Oram Access: " << (rss->comm_for_oram_access + rss->server_comm_for_oram_access)*1.0/(1024*1024) << " MB" << std::endl;
-    std::cout << "---> Reshuffling: " << (rss->comm_for_reshuffles + rss->server_comm_for_reshuffles)*1.0/(1024*1024) << " MB" << std::endl;
-    std::cout << "---> Evictions: " << (rss->comm_for_evictions + rss->server_comm_for_evictions)*1.0/(1024*1024) << " MB" << std::endl;
+    const int label_width = 30;
+    const int value_width = 8;
 
+    std::cout << std::fixed << std::setprecision(2) << std::left;
+    cout << "\n------------------ COMMUNICATION ------------------\n";
+
+    std::cout << std::setw(label_width) << "Total communication:" 
+            << std::right << std::setw(value_width) 
+            << (c2s_comm + s2c_comm) * 1.0 / (1024 * 1024 * num_queries) << " MB" << std::endl << std::left;
+
+    std::cout << std::setw(label_width) << "---> Oram Access:" 
+            << std::right << std::setw(value_width) 
+            << (rss->comm_for_oram_access + rss->server_comm_for_oram_access) * 1.0 / (1024 * 1024 * num_queries) << " MB" << std::endl << std::left;
+
+    std::cout << std::setw(label_width) << "---> Reshuffling:" 
+            << std::right << std::setw(value_width) 
+            << (rss->comm_for_reshuffles + rss->server_comm_for_reshuffles) * 1.0 / (1024 * 1024 * num_queries) << " MB" << std::endl << std::left;
+
+    std::cout << std::setw(label_width) << "---> Evictions:" 
+            << std::right << std::setw(value_width) 
+            << (rss->comm_for_evictions + rss->server_comm_for_evictions) * 1.0 / (1024 * 1024 * num_queries) << " MB" << std::endl << std::left;
+
+    // Total rounds (client-to-server)
     // oram_rounds = oram_rounds/2;
     // reshuffle_rounds = (reshuffle_rounds/3)*2;
     // eviction_rounds = (eviction_rounds/3)*2;
     c2s_round = oram_rounds + reshuffle_rounds + eviction_rounds;
 
-    std::cout << "\nTotal rounds: " << c2s_round << " rounds" << std::endl;
-    std::cout << "---> Oram Access: " << oram_rounds << " rounds" << std::endl;
-    std::cout << "---> Reshuffling: " << (reshuffle_rounds) << " rounds" << std::endl;
-    std::cout << "---> Eviction: " << (eviction_rounds) << " rounds" << std::endl;
+    std::cout << "\n";
+
+    std::cout << std::setw(label_width) << "Total rounds:" 
+            << std::right << std::setw(value_width) 
+            << c2s_round * 1.0 / num_queries << " rounds" << std::endl << std::left;
+
+    std::cout << std::setw(label_width) << "---> Oram Access:" 
+            << std::right << std::setw(value_width) 
+            << oram_rounds * 1.0 / num_queries << " rounds" << std::endl << std::left;
+
+    std::cout << std::setw(label_width) << "---> Reshuffling:" 
+            << std::right << std::setw(value_width) 
+            << reshuffle_rounds * 1.0 / num_queries << " rounds" << std::endl << std::left;
+
+    std::cout << std::setw(label_width) << "---> Eviction:" 
+            << std::right << std::setw(value_width) 
+            << eviction_rounds * 1.0 / num_queries << " rounds" << std::endl << std::left;
 
 }
 
+void print_search_results_untabulated(map<string, double> data){
+    const int label_width = 30;
+    const int value_width = 8;
+
+    cout << "\n---------------- SEARCH RESULTS --------------------\n";
+    cout << std::left;
+
+    if (data.count("Queue Size")) {
+        cout << setw(label_width) << "Queue Size:" << right << setw(value_width) << int(data["Queue Size"]) << " \n" << left;
+    }
+
+    if (data.count("Iterations")) {
+        cout << setw(label_width) << "Iterations:" << right << setw(value_width) << int(data["Iterations"]) << " \n" << left;
+    }
+
+    if (data.count("Beamwidth")) {
+        cout << setw(label_width) << "Beamwidth:" << right << setw(value_width) << int(data["Beamwidth"]) << " \n" << left;
+    }
+
+    if (data.count("Recall@10")) {
+        cout << setw(label_width) << "Recall@10:" << right << setw(value_width) << data["Recall@10"] << "\n" << left;
+    }
+
+    if (data.count("MRR@10")) {
+        cout << setw(label_width) << "MRR@10:" << right << setw(value_width) << data["MRR@10"] << "\n" << left;
+    }
+
+    cout << "\n--------------------- LATENCY ---------------------\n" << left;
+
+    if (data.count("Total Latency")) {
+        cout << setw(label_width) << "Total Latency:" << right << setw(value_width) << data["Total Latency"] << " ms\n" << left;
+    }
+
+    if (data.count("User Latency")) {
+        cout << setw(label_width) << "User Latency:" << right << setw(value_width) << data["User Latency"] << " ms\n" << left;
+    }
+
+    if (data.count("ORAM Client Local Time")) {
+        cout << setw(label_width) << "---> ORAM Client Local Time:" << right << setw(value_width) << data["ORAM Client Local Time"] << " ms\n" << left;
+    }
+
+    if (data.count("Network Time")) {
+        cout << setw(label_width) << "---> Network Time:" << right << setw(value_width) << data["Network Time"] << " ms\n" << left;
+    }
+
+    if (data.count("ORAM Server Local Time")) {
+        cout << setw(label_width) << "---> ORAM Server Local Time:" << right << setw(value_width) << data["ORAM Server Local Time"] << " ms\n" << left;
+    }
+
+    if (data.count("DiskANN Local Time")) {
+        cout << setw(label_width) << "---> DiskANN Local Time:" << right << setw(value_width) << data["DiskANN Local Time"] << " ms\n" << left;
+    }
+
+
+}
 
 void print_search_results(vector<double> data, bool only_headers){
     using namespace tableprinter;
