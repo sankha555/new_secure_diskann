@@ -102,6 +102,7 @@ struct DiskANNInterface {
         node_list.shrink_to_fit();
 
         omp_set_num_threads(num_threads);
+        cout << num_threads << " " << omp_get_num_threads() << "\n";
 
         diskann::cout.setf(std::ios_base::fixed, std::ios_base::floatfield);
         diskann::cout.precision(2);
@@ -145,6 +146,12 @@ struct DiskANNInterface {
             cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
         }
         io->counter = comm;
+
+        auto total_local_compute_time = 0;
+        auto total_oram_local_time = 0;
+        auto total_oram_wait_time = 0;
+        auto total_user_perceived_time = 0;
+        auto total_e2e_time = 0;
 
         for (uint32_t test_id = 0; test_id < Lvec.size(); test_id++)
         {
@@ -262,12 +269,22 @@ struct DiskANNInterface {
                                                                                         [](const diskann::QueryStats &stats) { return stats.total_us; });                                                         
 
 
-                    auto total_user_perceived_time = diskann::get_total_stats<float>(stats, query_num,
+                    total_user_perceived_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.user_perceived_time.count(); });                                                         
 
 
-                    auto total_e2e_time = diskann::get_total_stats<float>(stats, query_num,
+                    total_e2e_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.e2e_time.count(); });                                                         
+
+                    total_local_compute_time = diskann::get_total_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.local_compute_time.count(); });  
+                
+
+                    total_oram_wait_time = diskann::get_total_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.oram_wait_time.count(); });  
+                
+                    total_oram_local_time = diskann::get_total_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return (stats.oram_total_time.count() - stats.oram_wait_time.count()); });  
 
 
                     double recall = 0, mrr = 0;
@@ -347,6 +364,15 @@ struct DiskANNInterface {
             cout << "Executed " << ((OramRing*)oram_api->oram)->num_reshuffles << " early reshuffles." << endl;
             cout << "Executed " << oram_api->oram_calls << " oram calls." << endl;
             // cout << "Communication time = " << .count() << "\n";
+        }
+
+        if(use_oram){
+            cout << "\n\n";
+            cout << "E2E Time: " << (total_e2e_time*1000.0)/(*query_nums.rbegin()) << " ms\n";
+            cout << "Online Time: " << (total_user_perceived_time*1000.0)/(*query_nums.rbegin()) << " ms\n";
+            cout << "Local Search Time: " << (total_local_compute_time*1000.0)/(*query_nums.rbegin()) << " ms (" << total_local_compute_time*100.0/total_user_perceived_time << " %)\n";
+            cout << "ORAM Wait Time: " << (total_oram_wait_time*1000.0)/(*query_nums.rbegin()) << " ms (" << total_oram_wait_time*100.0/total_user_perceived_time << " %)\n";
+            cout << "ORAM Local Time: " << (total_oram_local_time*1000.0)/(*query_nums.rbegin()) << " ms (" << total_oram_local_time*100.0/total_user_perceived_time << " %)\n";
         }
 
         return best_recall >= fail_if_recall_below ? 0 : -1;

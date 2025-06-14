@@ -40,7 +40,9 @@ struct QueryStats
     unsigned num_search_iterations = 0; // while loop counter
 
     std::chrono::duration<double> local_compute_time;
+    std::chrono::duration<double> oram_total_time;
     std::chrono::duration<double> oram_wait_time;
+    std::chrono::duration<double> oram_local_time;
 
     std::chrono::duration<double> communication_time;
     std::chrono::duration<double> user_perceived_time;
