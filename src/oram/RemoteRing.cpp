@@ -16,6 +16,8 @@
 
 #include "evp.h"
 
+#include "diskann/include/timer.h"
+
 #define NUM_THREADS 8
 #define SHA256_DIGEST_LENGTH 32
 
@@ -295,7 +297,7 @@ void RemoteRing::run_server_memory(){
 				io->recv_data(position.data(), sizeof(int)*num_blocks);
 				io->recv_data(offset.data(), sizeof(int)*num_blocks);
 
-				auto lts = std::chrono::high_resolution_clock::now();
+				auto lts = std::chrono::steady_clock::now();
 
 				size_t len = num_blocks * (ctx_block_size);
 				unsigned char* payload = new unsigned char[len];
@@ -310,7 +312,7 @@ void RemoteRing::run_server_memory(){
 				} 
 
 				if(rt == ReadBatchBlock_R){
-					online_server_side_time += (std::chrono::high_resolution_clock::now() - lts);
+					online_server_side_time += (std::chrono::steady_clock::now() - lts);
 				}
 
 				long comm = io->counter;
@@ -347,7 +349,7 @@ void RemoteRing::run_server_memory(){
 				io->recv_data(position.data(), sizeof(int)*num_blocks);
 				io->recv_data(offset.data(), sizeof(int)*num_blocks);
 
-				auto lts = std::chrono::high_resolution_clock::now();
+				auto lts = std::chrono::steady_clock::now();
 
 				size_t path_len = num_blocks / num_real_blocks;
 
@@ -379,7 +381,7 @@ void RemoteRing::run_server_memory(){
 					
 				}
 
-				online_server_side_time += (std::chrono::high_resolution_clock::now() - lts);
+				online_server_side_time += (std::chrono::steady_clock::now() - lts);
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
@@ -403,7 +405,7 @@ void RemoteRing::run_server_memory(){
 				size_t num_buckets;
 
 				io->recv_data(&num_buckets, sizeof(size_t));
-				auto lts = std::chrono::high_resolution_clock::now();
+				auto lts = std::chrono::steady_clock::now();
 
 				std::vector<int> position(num_buckets);
 				io->recv_data(position.data(), sizeof(int)*num_buckets);
@@ -464,7 +466,9 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 	
 	int rt = isReshuffle ? ReadBatchBlock_R : ReadBatchBlock;
 
-  auto lts = std::chrono::high_resolution_clock::now();
+	// auto lts = std::chrono::steady_clock::now();
+	diskann::Timer oram_timer;
+
 	io->send_data(&rt, sizeof(int));
 
 	size_t num_blocks = positions.size();
@@ -479,6 +483,11 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 	// cout << "ReadBucketBatch allocate done" << endl;
 
 	io->recv_data(payload, len);
+	io->recv_data(&comm, sizeof(long));
+
+	// std::chrono::duration<double> oram_reshuffle_wait_time = (std::chrono::steady_clock::now() - lts);
+	// this->current_query_stats->oram_wait_time += oram_reshuffle_wait_time;
+	this->current_query_stats->oram_wait_time_us += oram_timer.elapsed();
 
 	if(isReshuffle){
 		rounds_for_reshuffles += (io->num_rounds - rounds);
@@ -488,15 +497,11 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 		comm_for_evictions += (sizeof(int) + sizeof(size_t) + 2*sizeof(int)*num_blocks);
 	}
 
-	io->recv_data(&comm, sizeof(long));
 	if(isReshuffle){
 		server_comm_for_reshuffles += len;
 	} else {
 		server_comm_for_evictions += len;
 	}
-
-	std::chrono::duration<double> oram_reshuffle_wait_time = (std::chrono::high_resolution_clock::now() - lts);
-	this->current_query_stats->oram_wait_time += oram_reshuffle_wait_time;
 
 	size_t per_block_size = (1 + ptx_block_size) * sizeof(int);
 	blocks.resize(num_blocks);
@@ -560,16 +565,13 @@ void RemoteRing::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions,
 
 	int rt = ReadBatchBlockXor;
 
-    auto lts = std::chrono::high_resolution_clock::now();
+	diskann::Timer oram_timer;
+  // auto lts = std::chrono::steady_clock::now();
 	io->send_data(&rt, sizeof(int));
 
 	size_t num_blocks = positions.size();
 	// assert(num_blocks % num_levels == 0);
 	// size_t num_real_blocks = num_blocks / num_levels;
-	io->send_data(&num_blocks, sizeof(size_t));
-	io->send_data(&num_real_blocks, sizeof(size_t));
-	io->send_data(positions.data(), sizeof(int)*num_blocks);
-	io->send_data(offsets.data(), sizeof(int)*num_blocks);
 
 	// no need for ivs
 	size_t len = num_real_blocks * (SBucket::getCipherSize() - 16);
@@ -581,6 +583,11 @@ void RemoteRing::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions,
 		dexor_payload = new unsigned char[num_blocks * SBucket::getCipherSize()];
 	}
 
+	io->send_data(&num_blocks, sizeof(size_t));
+	io->send_data(&num_real_blocks, sizeof(size_t));
+	io->send_data(positions.data(), sizeof(int)*num_blocks);
+	io->send_data(offsets.data(), sizeof(int)*num_blocks);
+
 	io->recv_data(payload, len);
 	io->recv_data(ivs, num_blocks*16);
 
@@ -590,8 +597,10 @@ void RemoteRing::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions,
 	io->recv_data(&comm, sizeof(long));
 	server_comm_for_oram_access += comm;
 
-    std::chrono::duration<double> oram_read_wait_time = (std::chrono::high_resolution_clock::now() - lts);
-	this->current_query_stats->oram_wait_time += oram_read_wait_time;
+  // std::chrono::duration<double> oram_read_wait_time = (std::chrono::steady_clock::now() - lts);
+	// this->current_query_stats->oram_wait_time += oram_read_wait_time;
+	this->current_query_stats->oram_wait_time_us += oram_timer.elapsed();
+
 
 	size_t per_block_size = (1 + ptx_block_size) * sizeof(int);
 	blocks.resize(num_real_blocks);

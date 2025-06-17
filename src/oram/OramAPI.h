@@ -32,6 +32,8 @@
 #include "OramInterface.h"
 #include "RemoteRing.h"
 
+#include "diskann/include/timer.h"
+
 using namespace std;
 
 using node_id_t = int32_t;
@@ -298,7 +300,7 @@ class OramAPI {
     }
 
     template<typename T,  typename LabelT=node_id_t>
-    vector<DiskANNNode<T, LabelT>*> oram_access(vector<node_id_t> node_ids, int padded_access_size){
+    vector<DiskANNNode<T, LabelT>*> oram_access(vector<node_id_t> node_ids, int padded_access_size){        
         int real_accesses = node_ids.size();
 
         vector<block_id_t> block_ids = get_block_ids(node_ids);

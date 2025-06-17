@@ -1755,7 +1755,9 @@ void OramIndex<T, LabelT>::oram_read(
     int beam_width,
     QueryStats* stats
 ){
-	auto lts = std::chrono::high_resolution_clock::now();
+	// auto lts = std::chrono::steady_clock::now();
+    Timer oram_timer;
+    Timer oram_client_timer;
 
     ((RemoteRing*) ((OramRing*) oram->oram)->storage)->current_query_stats = stats;
 
@@ -1764,13 +1766,13 @@ void OramIndex<T, LabelT>::oram_read(
         node_ids.push_back((node_id_t)node.first);
     }
     
-    stats->local_compute_time += (std::chrono::high_resolution_clock::now() - lts);
+    // stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
 
-	lts = std::chrono::high_resolution_clock::now();
+	// lts = std::chrono::steady_clock::now();
     vector<DiskANNNode<T, LabelT>*> fetched_nodes = oram->oram_access<T, LabelT>(node_ids, beam_width);    
-    stats->oram_total_time += (std::chrono::high_resolution_clock::now() - lts);
+    // stats->oram_total_time += (std::chrono::steady_clock::now() - lts);
 
-	lts = std::chrono::high_resolution_clock::now();
+	// lts = std::chrono::steady_clock::now();
     map<node_id_t, DiskANNNode<T, LabelT>*> node_map;
     for (auto &node : fetched_nodes) {
         node_id_t node_id = node->get_id();
@@ -1795,7 +1797,9 @@ void OramIndex<T, LabelT>::oram_read(
 
     oram->oram_calls++;
     
-    stats->local_compute_time += (std::chrono::high_resolution_clock::now() - lts);
+    // stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
+    stats->oram_total_time_us += oram_timer.elapsed();
+    stats->oram_client_time_us = (stats->oram_total_time_us - stats->oram_wait_time_us);
 }
 
 
@@ -1806,7 +1810,8 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
                                                  const uint32_t io_limit, const bool use_reorder_data,
                                                  QueryStats *stats, OramAPI* oram)
 {
-	auto lts = std::chrono::high_resolution_clock::now();
+	auto lts = std::chrono::steady_clock::now();
+    Timer diskann_timer;
 
     Timer query_timer, io_timer, cpu_timer;
 
@@ -1958,11 +1963,15 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
     std::vector<std::pair<uint32_t, std::pair<uint32_t, uint32_t *>>> cached_nhoods;
     cached_nhoods.reserve(2 * beam_width);
     
-	stats->local_compute_time += (std::chrono::high_resolution_clock::now() - lts);
+	stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
+
+    // stats->diskann_compute_time += diskann_timer.elapsed();
 
     while(num_fixed_hops < io_limit)
     {
-        lts = std::chrono::high_resolution_clock::now();
+        lts = std::chrono::steady_clock::now();
+        // diskann_timer.reset();
+
         stats->num_search_iterations++;
 
         // clear iteration state
@@ -2029,11 +2038,12 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
             // struct rusage usage_later;
             // getrusage(RUSAGE_SELF, &usage);
 
-        	stats->local_compute_time += (std::chrono::high_resolution_clock::now() - lts);
+        	stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
 
+            // stats->diskann_compute_time += diskann_timer.elapsed();
             oram_read(frontier_nhoods, oram, beam_width, stats);
 
-        	lts = std::chrono::high_resolution_clock::now();
+        	lts = std::chrono::steady_clock::now();
 
             if (stats != nullptr){
                 stats->io_us += (float)io_timer.elapsed();
@@ -2041,8 +2051,14 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
         } else {
             // cout << "Frontier is empty\n";
             // even if frontier is empty, I need to make an oram access for security
+
+            // stats->diskann_compute_time += diskann_timer.elapsed();
             oram_read(frontier_nhoods, oram, beam_width, stats);
+
         }
+        // stats->diskann_compute_time += diskann_timer.elapsed();
+
+        // diskann_timer.reset();
 
         if(stats != nullptr){
             stats->n_fullvectorreads += beam_width;
@@ -2201,10 +2217,13 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
 
         hops++;
         
-	    stats->local_compute_time += (std::chrono::high_resolution_clock::now() - lts);
+	    stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
+        // stats->diskann_compute_time +=  diskann_timer.elapsed();
     }
 
-	lts = std::chrono::high_resolution_clock::now();
+	lts = std::chrono::steady_clock::now();
+    // diskann_timer.reset();
+
     
     uint64_t max_hops = 0;
     for (auto &node : node_distances){
@@ -2258,7 +2277,8 @@ void OramIndex<T, LabelT>::cached_beam_search_with_oram(const T *query1, const u
         stats->total_us = (float)query_timer.elapsed();
     }
 
-	stats->local_compute_time += (std::chrono::high_resolution_clock::now() - lts);
+	stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
+    stats->diskann_compute_time = diskann_timer.elapsed() - stats->oram_total_time_us;
 }
 
 

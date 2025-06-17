@@ -23,6 +23,7 @@
 #include "oram_index.h"
 #include "pq_flash_index.h"
 #include "index.h"
+#include "timer.h"
 
 #include "OramAPI.h"
 
@@ -178,6 +179,7 @@ struct DiskANNInterface {
             for (int64_t i = 0; i < (int64_t)query_num; i++)
             {
                 if(use_oram){
+                    diskann::Timer query_timer;
                     auto st_q = std::chrono::high_resolution_clock::now();
 
                     _pFlashIndex->cached_beam_search_with_oram(
@@ -195,14 +197,19 @@ struct DiskANNInterface {
                         oram_api
                     );
 
+                    (stats + i)->user_time_us = query_timer.elapsed();
+
                     // Eviction
                     auto st_ev = std::chrono::high_resolution_clock::now();
+                    
                     (stats + i)->user_perceived_time += (st_ev - st_q);
 
                     ((OramRing*) oram_api->oram)->evict_and_write_back();
                     auto en_ev = std::chrono::high_resolution_clock::now();
 
                     (stats + i)->e2e_time += (en_ev - st_q);
+                    (stats + i)->total_time_us = query_timer.elapsed();
+
 
                 } else {
                     _pFlashIndex->cached_beam_search(
@@ -288,6 +295,24 @@ struct DiskANNInterface {
                     total_oram_local_time = diskann::get_total_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return (stats.oram_total_time.count() - stats.oram_wait_time.count()); });  
 
+                    auto mean_diskann_local_compute = diskann::get_mean_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.diskann_compute_time; });  
+
+                    auto mean_oram_total_time = diskann::get_mean_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.oram_total_time_us; });  
+
+                    auto mean_total_time = diskann::get_mean_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.total_time_us; });                                                                  
+
+                    auto mean_user_time = diskann::get_mean_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.user_time_us; });    
+                                                                                        
+                    auto mean_oram_wait_time = diskann::get_mean_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.oram_wait_time_us; }); 
+                    
+                    auto mean_oram_client_time = diskann::get_mean_stats<float>(stats, query_num,
+                                                                                        [](const diskann::QueryStats &stats) { return stats.oram_client_time_us; }); 
+
 
                     double recall = 0, mrr = 0;
                     recall = diskann::calculate_recall((uint32_t)query_num, gt_ids, gt_dists, (uint32_t)gt_dim,
@@ -326,18 +351,33 @@ struct DiskANNInterface {
                         cout << "Executed " << oram_api->oram_calls << " oram calls." << endl;
                     }
                     
+                    // cout << "CPU ms = " << mean_cpuus/1000 << "\n"; 
+                    // cout << "Diskann ms = " << mean_diskann_local_compute/1000 << "\n"; 
+                    // cout << "ORAM Total ms = " << mean_oram_total_time/1000 << "\n"; 
+                    // cout << "ORAM Wait ms = " << mean_oram_wait_time/1000 << "\n"; 
+                    // cout << "ORAM Client ms = " << mean_oram_client_time/1000 << "\n"; 
+                    // cout << "User ms = " << mean_user_time/1000 << "\n"; 
+                    // cout << "Total ms = " << mean_total_time/1000 << "\n"; 
+
                     results["Queue Size"] = L;
                     results["Iterations"] = mean_n_search_iterations;
                     results["Beamwidth"] = optimized_beamwidth;
                     results["Recall@10"] = recall;
                     results["MRR@10"] = mrr;
 
-                    results["Total Latency"] = (total_e2e_time*1000.0)/num_queries;
-                    results["User Latency"] = (total_user_perceived_time*1000.0)/num_queries;
+                    // results["Total Latency"] = (total_e2e_time*1000.0)/num_queries;
+                    // results["User Latency"] = (total_user_perceived_time*1000.0)/num_queries;
+                    // results["ORAM Server Local Time"] = (total_server_local_time*1000.0)/num_queries;
+                    // results["ORAM Client Local Time"] = (total_oram_local_time*1000.0)/num_queries;
+                    // results["Network Time"] = ((total_oram_wait_time - total_server_local_time)*1000.0)/num_queries;
+                    // results["DiskANN Local Time"] = (total_local_compute_time*1000.0)/num_queries;
+
+                    results["Total Latency"] = (mean_total_time/1000.0);
+                    results["User Latency"] = (mean_user_time/1000.0);
                     results["ORAM Server Local Time"] = (total_server_local_time*1000.0)/num_queries;
-                    results["ORAM Client Local Time"] = (total_oram_local_time*1000.0)/num_queries;
-                    results["Network Time"] = ((total_oram_wait_time - total_server_local_time)*1000.0)/num_queries;
-                    results["DiskANN Local Time"] = (total_local_compute_time*1000.0)/num_queries;
+                    results["ORAM Client Local Time"] = (mean_oram_client_time/1000.0);
+                    results["Network Time"] = ((mean_oram_wait_time*num_queries/1000 - total_server_local_time))/num_queries;
+                    results["DiskANN Local Time"] = (mean_diskann_local_compute/1000.0);
 
                     print_search_results_untabulated(results);
 
