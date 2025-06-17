@@ -312,7 +312,7 @@ struct DiskANNInterface {
                     
                     auto mean_oram_client_time = diskann::get_mean_stats<float>(stats, query_num,
                                                                                         [](const diskann::QueryStats &stats) { return stats.oram_client_time_us; }); 
-
+                    
 
                     double recall = 0, mrr = 0;
                     recall = diskann::calculate_recall((uint32_t)query_num, gt_ids, gt_dists, (uint32_t)gt_dim,
@@ -343,7 +343,7 @@ struct DiskANNInterface {
                     }
 
                     long num_queries = i+1;
-
+                    auto mean_network_time = mean_oram_wait_time - (total_server_local_time*1000000.0/num_queries);
                     
                     // cout << "Completed search for " << *query_nums.rbegin() << " queries." << endl;
                     if(use_oram){
@@ -376,7 +376,7 @@ struct DiskANNInterface {
                     results["User Latency"] = (mean_user_time/1000.0);
                     results["ORAM Server Local Time"] = (total_server_local_time*1000.0)/num_queries;
                     results["ORAM Client Local Time"] = (mean_oram_client_time/1000.0);
-                    results["Network Time"] = ((mean_oram_wait_time*num_queries/1000 - total_server_local_time))/num_queries;
+                    results["Network Time"] = mean_network_time/1000.0;
                     results["DiskANN Local Time"] = (mean_diskann_local_compute/1000.0);
 
                     print_search_results_untabulated(results);
