@@ -487,7 +487,11 @@ void RemoteRing::ReadBlockBatchAsBlockRing(const std::vector<int>& positions, co
 
 	// std::chrono::duration<double> oram_reshuffle_wait_time = (std::chrono::steady_clock::now() - lts);
 	// this->current_query_stats->oram_wait_time += oram_reshuffle_wait_time;
-	this->current_query_stats->oram_wait_time_us += oram_timer.elapsed();
+	if(rt == ReadBatchBlock_R){
+		this->current_query_stats->oram_wait_time_us += oram_timer.elapsed();
+		oram_timer.reset();
+	}
+
 
 	if(isReshuffle){
 		rounds_for_reshuffles += (io->num_rounds - rounds);
@@ -597,10 +601,10 @@ void RemoteRing::ReadBlockBatchAsBlockRingXor(const std::vector<int>& positions,
 	io->recv_data(&comm, sizeof(long));
 	server_comm_for_oram_access += comm;
 
-  // std::chrono::duration<double> oram_read_wait_time = (std::chrono::steady_clock::now() - lts);
+  	// std::chrono::duration<double> oram_read_wait_time = (std::chrono::steady_clock::now() - lts);
 	// this->current_query_stats->oram_wait_time += oram_read_wait_time;
 	this->current_query_stats->oram_wait_time_us += oram_timer.elapsed();
-
+	oram_timer.reset();
 
 	size_t per_block_size = (1 + ptx_block_size) * sizeof(int);
 	blocks.resize(num_real_blocks);

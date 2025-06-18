@@ -352,12 +352,12 @@ struct DiskANNInterface {
                     }
                     
                     // cout << "CPU ms = " << mean_cpuus/1000 << "\n"; 
-                    // cout << "Diskann ms = " << mean_diskann_local_compute/1000 << "\n"; 
-                    // cout << "ORAM Total ms = " << mean_oram_total_time/1000 << "\n"; 
-                    // cout << "ORAM Wait ms = " << mean_oram_wait_time/1000 << "\n"; 
-                    // cout << "ORAM Client ms = " << mean_oram_client_time/1000 << "\n"; 
-                    // cout << "User ms = " << mean_user_time/1000 << "\n"; 
-                    // cout << "Total ms = " << mean_total_time/1000 << "\n"; 
+                    cout << "Diskann ms = " << mean_diskann_local_compute/1000 << "\n"; 
+                    cout << "ORAM Total ms = " << mean_oram_total_time/1000 << "\n"; 
+                    cout << "ORAM Wait ms = " << mean_oram_wait_time/1000 << "\n"; 
+                    cout << "ORAM Client ms = " << mean_oram_client_time/1000 << "\n"; 
+                    cout << "User ms = " << mean_user_time/1000 << "\n"; 
+                    cout << "Total ms = " << mean_total_time/1000 << "\n"; 
 
                     results["Queue Size"] = L;
                     results["Iterations"] = mean_n_search_iterations;
