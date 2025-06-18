@@ -268,7 +268,8 @@ void RemoteRing::run_server_memory(){
 	while(1) {
 		int rt;
 		io->recv_data(&rt, sizeof(int));
-		
+		// cout << "RT = " << rt << endl;
+
 		switch (rt){
 			case -1: {
 				long comm = io->counter - start_comm;

@@ -109,6 +109,7 @@ struct DiskANNInterface {
 
         // set<size_t> query_nums{10, 100, 500, 1000, 5000, 10000};
 
+        query_num = *query_nums.begin();
         cout << "\n\nRunning " << (use_oram ? "SECURE " : "INSECURE ") << "search for ";
                 {
                     int i = 0;
@@ -139,14 +140,16 @@ struct DiskANNInterface {
 
         // int op = -2;
         // io->send_data(&op, sizeof(int));
-        const long long* dummy_data = new long long[1000000]; 
-        long comm = io->counter;
-        for(int i = 0; i < 500; i++){
-            io->send_data(dummy_data, 1000000 * sizeof(long long));
-            cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
-        }
-        io->counter = comm;
-        cout << endl;
+        if(use_oram){
+            const long long* dummy_data = new long long[1000000]; 
+            long comm = io->counter;
+            for(int i = 0; i < 500; i++){
+                io->send_data(dummy_data, 1000000 * sizeof(long long));
+                cout << "\rDummy " << i+1 << " sent: " << (io->counter - comm)*1.0/(1024*1024) << " MB"  << std::flush;
+            }
+            io->counter = comm;
+            cout << endl;
+        }   
 
         auto total_local_compute_time = 0;
         auto total_oram_local_time = 0;
@@ -167,7 +170,6 @@ struct DiskANNInterface {
             auto stats = new diskann::QueryStats[query_num];
 
             std::vector<uint64_t> query_result_ids_64(recall_at * query_num);
-            auto s = std::chrono::high_resolution_clock::now();
 
             long before_query_comm = 0, before_query_rounds = 0;
             before_query_comm = io->counter;
@@ -175,7 +177,8 @@ struct DiskANNInterface {
 
             int query_nums_done = 0;
 
-            #pragma omp parallel for schedule(dynamic, 1)
+            auto s = std::chrono::high_resolution_clock::now();            
+            // #pragma omp parallel for schedule(dynamic, 1)
             for (int64_t i = 0; i < (int64_t)query_num; i++)
             {
                 if(use_oram){
@@ -212,6 +215,8 @@ struct DiskANNInterface {
 
 
                 } else {
+                    diskann::Timer query_timer;
+
                     _pFlashIndex->cached_beam_search(
                         query + (i * query_aligned_dim),
                         recall_at, 
@@ -223,17 +228,20 @@ struct DiskANNInterface {
                         use_reorder_data, 
                         stats + i
                     );
+
+                    (stats + i)->user_time_us = query_timer.elapsed();
                 }
 
                 cout << "\rQuery " << i + 1 << " done." << std::flush;
 
-                if (query_nums.count(i+1)){
+                if(query_nums.count(i+1)){
                     cout << endl << endl;
                     
                     long after_query_comm = io->counter;
                     long after_query_rounds = io->num_rounds;
 
                     size_t query_num = i+1;
+
                     auto e = std::chrono::high_resolution_clock::now();
                     std::chrono::duration<double> diff = e - s;
                     double qps = (1.0 * query_num) / (1.0 * diff.count());
@@ -324,16 +332,21 @@ struct DiskANNInterface {
                     best_mrr = std::max(mrr, best_mrr); 
                     
                     // fetch server-to-client metrics
-                    int req = -1;
-                    io->send_data(&req, sizeof(int));
-                    io->counter -= sizeof(int);
+                    if(use_oram){
+                        int req = -1;
+                        io->send_data(&req, sizeof(int));
+                        io->counter -= sizeof(int);
+                    }
 
                     long server_comm, server_rounds;
                     double total_server_local_time;
-                    io->recv_data(&server_comm, sizeof(long));
-                    io->recv_data(&server_rounds, sizeof(long));
-                    io->recv_data(&total_server_local_time, sizeof(double));
-                    io->num_rounds--;
+                    if(use_oram){
+                        io->recv_data(&server_comm, sizeof(long));
+                        io->recv_data(&server_rounds, sizeof(long));
+                        io->recv_data(&total_server_local_time, sizeof(double));
+                        io->num_rounds--;
+                    }
+
 
                     // server_rounds = 2*(((OramRing*) oram_api->oram)->rounds_for_early_reshuffle + ((OramRing*) oram_api->oram)->rounds_for_eviction)/3 + ((OramRing*) oram_api->oram)->rounds_for_oram_access/2;
                     if (oram_api == nullptr){
@@ -351,7 +364,8 @@ struct DiskANNInterface {
                         cout << "Executed " << oram_api->oram_calls << " oram calls." << endl;
                     }
                     
-                    // cout << "CPU ms = " << mean_cpuus/1000 << "\n"; 
+                    cout << "Latency ms = " << mean_latency/1000 << "\n"; 
+                    cout << "CPU ms = " << mean_cpuus/1000 << "\n"; 
                     cout << "Diskann ms = " << mean_diskann_local_compute/1000 << "\n"; 
                     cout << "ORAM Total ms = " << mean_oram_total_time/1000 << "\n"; 
                     cout << "ORAM Wait ms = " << mean_oram_wait_time/1000 << "\n"; 
@@ -372,6 +386,8 @@ struct DiskANNInterface {
                     // results["Network Time"] = ((total_oram_wait_time - total_server_local_time)*1000.0)/num_queries;
                     // results["DiskANN Local Time"] = (total_local_compute_time*1000.0)/num_queries;
 
+                    cout << "Query num: " << query_num << "; Num Queries: " << num_queries << endl;
+
                     results["Total Latency"] = (mean_total_time/1000.0);
                     results["User Latency"] = (mean_user_time/1000.0);
                     results["ORAM Server Local Time"] = (total_server_local_time*1000.0)/num_queries;
@@ -384,11 +400,15 @@ struct DiskANNInterface {
                     query_nums_done++;
                 }
 
-                if(query_nums_done == query_nums.size()){
-                    break;
-                }
-            }
 
+                // if(query_nums_done == query_nums.size()){
+                //     break;
+                // }
+            }
+            auto end = std::chrono::high_resolution_clock::now();
+            cout << "Time: " << (end - s).count()*1000 << " ms\n";
+
+                
             delete[] stats;
         }
         // cout << "===================================================================================================================================================================================" << endl << endl << endl;

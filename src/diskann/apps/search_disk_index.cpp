@@ -227,7 +227,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         std::vector<uint64_t> query_result_ids_64(recall_at * query_num);
         auto s = std::chrono::high_resolution_clock::now();
 
-#pragma omp parallel for schedule(dynamic, 1)
+// #pragma omp parallel for schedule(dynamic, 1)
         for (int64_t i = 0; i < (int64_t)query_num; i++)
         {
             if (!filtered_search)
@@ -256,6 +256,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         }
         auto e = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = e - s;
+        cout << "Time: " << diff.count() << "\n";
         double qps = (1.0 * query_num) / (1.0 * diff.count());
 
         diskann::convert_types<uint64_t, uint32_t>(query_result_ids_64.data(), query_result_ids[test_id].data(),
