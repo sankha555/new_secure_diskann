@@ -406,7 +406,7 @@ struct DiskANNInterface {
                 // }
             }
             auto end = std::chrono::high_resolution_clock::now();
-            cout << "Time: " << (end - s).count()*1000 << " ms\n";
+            // cout << "Time: " << (end - s).count()*1000 << " ms\n";
 
                 
             delete[] stats;
