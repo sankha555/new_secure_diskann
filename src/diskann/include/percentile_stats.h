@@ -39,6 +39,13 @@ struct QueryStats
     unsigned num_fixed_rts = 0;
     unsigned num_search_iterations = 0; // while loop counter
 
+    float diskann_compute_time = 0;
+    float oram_client_time_us = 0;
+    float oram_wait_time_us = 0;
+    float oram_total_time_us = 0;
+    float user_time_us = 0;
+    float total_time_us = 0;
+
     std::chrono::duration<double> local_compute_time;
     std::chrono::duration<double> oram_total_time;
     std::chrono::duration<double> oram_wait_time;
