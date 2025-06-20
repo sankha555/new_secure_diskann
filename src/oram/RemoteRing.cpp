@@ -18,7 +18,7 @@
 
 #include "diskann/include/timer.h"
 
-#define NUM_THREADS 8
+#define NUM_THREADS 4
 #define SHA256_DIGEST_LENGTH 32
 
 enum RequestType {
