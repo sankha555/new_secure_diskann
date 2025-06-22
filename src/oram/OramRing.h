@@ -139,7 +139,7 @@ public:
             if(reshuffle){
                 // num_reshuffles++;
                 // cout << "Early reshuffle " << reshuffle_buckets.size() << " buckets." << endl;
-                early_reshuffle(vector<int>(reshuffle_buckets.begin(), reshuffle_buckets.end()));
+                // early_reshuffle(vector<int>(reshuffle_buckets.begin(), reshuffle_buckets.end()));
             }
             // cout << "Comm for reshuffle = " << ((RemoteServerStorage*)storage)->io->counter - comm << endl;
 
