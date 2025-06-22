@@ -27,6 +27,7 @@ int port = SERVER_PORT;
 string address = SERVER_IP;
 string dataset = "";
 string config_path;
+bool in_memory = true;
 
 using namespace std;
 
@@ -55,7 +56,10 @@ int main(int argc, char** argv) {
     amap.arg("d", dataset, "Dataset: [sift, trip, msmarco, laion]");
     amap.arg("ip", address, "IP Address of server");
     amap.arg("c", config_path, "Path to config file");
+    amap.arg("m", in_memory, "use memory");
     amap.parse(argc, argv);
+
+    cout << "In memory? " << in_memory << "\n";
 
     Metadata md;
     config_path = config_path.size() == 0 ?  (CONFIG_DIR) + "config_" + dataset + ".json" : config_path;
@@ -93,8 +97,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    bool in_memory = true;
-
     if(!md.use_oram){
         bool ready = true;
         bf_io->send_data(&ready, sizeof(bool));
@@ -110,7 +112,11 @@ int main(int argc, char** argv) {
     RemoteRing server = RemoteRing(io, config, true, in_memory, md.integrity);
     try {
         if(md.use_oram){
-            server.load_server_state(md.buckets_path.c_str());
+            if(in_memory){
+                server.load_server_state(md.buckets_path.c_str());
+            } else {
+                cout << "Bucket loading will happen in online-time\n";
+            }
         }
     } catch (const std::exception& e) {
         cerr << "Error: Failed to load server buckets. Exception: " << e.what() << endl;
@@ -153,7 +159,11 @@ int main(int argc, char** argv) {
     try {
         server.start_comm = comm;
         server.start_rounds = round;
-        server.run_server();
+        if(in_memory){
+            server.run_server();
+        } else {
+            server.run_server_disk("oram_data/marco/R128_L100_PQ64/buckets");
+        }
     } catch (const std::exception& e) {
         cerr << "Error: Exception occurred while running the server. Exception: " << e.what() << endl;
     }

@@ -207,7 +207,7 @@ struct DiskANNInterface {
                     
                     (stats + i)->user_perceived_time += (st_ev - st_q);
 
-                    ((OramRing*) oram_api->oram)->evict_and_write_back();
+                    // ((OramRing*) oram_api->oram)->evict_and_write_back();
                     auto en_ev = std::chrono::high_resolution_clock::now();
 
                     (stats + i)->e2e_time += (en_ev - st_q);

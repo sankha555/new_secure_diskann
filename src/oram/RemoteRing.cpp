@@ -56,7 +56,7 @@ RemoteRing::RemoteRing(NetIO* io, RingOramConfig oram_config, bool is_server, bo
     : io(io), is_server(is_server), in_memory(in_memory), integrity(integrity), oram_config(oram_config){
 
     // currently only support in memory server
-    assert(in_memory);
+    // assert(in_memory);
 
     ptx_block_size = oram_config.block_size;
 	ctx_block_size = SBucket::getCipherSize();
@@ -467,8 +467,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 	size_t ctx_block_size = SBucket::getCipherSize();
 	size_t metadata_size = sizeof(int) + sizeof(int) + sizeof(bool);
 
-	std::chrono::duration<double> io_time;
-	std::chrono::duration<double> online_io_time;
+	float disk_access_time = 0;
+	float online_server_side_time = 0;
 
 	while(1) {
 		int rt;
@@ -478,12 +478,15 @@ void RemoteRing::run_server_disk(string buckets_path){
 			case -1: {
 				long comm = io->counter - start_comm;
 				long rounds = io->num_rounds - start_rounds;
+				double online_server_local_time = online_server_side_time*1.0/1000000;
 
 				// cout << "Received req to send comm: " << comm << " bytes" << endl;
 				io->send_data(&comm, sizeof(long));
 				io->send_data(&rounds, sizeof(long));
+				io->send_data(&online_server_local_time, sizeof(double));
 
 				io->counter -= 2*sizeof(long);
+				io->counter -= sizeof(double);
 				io->num_rounds--;
 				break;
 			}
@@ -502,11 +505,12 @@ void RemoteRing::run_server_disk(string buckets_path){
 				io->recv_data(position.data(), sizeof(int)*num_blocks);
 				io->recv_data(offset.data(), sizeof(int)*num_blocks);
 
+				diskann::Timer server_timer;
+
 				size_t len = num_blocks * (ctx_block_size);
 				unsigned char* payload = new unsigned char[len];
 
-				// #pragma omp parallel for num_threads(NUM_THREADS)
-				auto start_read = std::chrono::high_resolution_clock::now();
+				#pragma omp parallel for num_threads(NUM_THREADS)
 				for(size_t req_id = 0; req_id < num_blocks; req_id++){
 
 					size_t bucket_id = position[req_id];	// bucket to be queried
@@ -516,8 +520,13 @@ void RemoteRing::run_server_disk(string buckets_path){
 					cout << bucket_file_path << "\n";
 					
 					unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
+
+					diskann::Timer disk_access_timer;
 					FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
 					size_t bytesRead = fread(bucket_data, 1, bucket_size*ctx_block_size, bucket_file);
+					disk_access_time += disk_access_timer.elapsed();
+					disk_access_timer.reset();
+					
 					if(bytesRead != bucket_size*ctx_block_size){
 						cout << "Full bucket not read from bucket " << bucket_id << "\n";
 						perror("");
@@ -527,18 +536,17 @@ void RemoteRing::run_server_disk(string buckets_path){
 					size_t payload_write_offset = req_id * ctx_block_size;
 					mempcpy(payload + payload_write_offset, tmp_data, ctx_block_size);
 				} 
-				auto end_read = std::chrono::high_resolution_clock::now();
 
 				// cout << "ReadBucketBatch write to payload done" << endl;
+				if(rt == ReadBatchBlock_R){
+					online_server_side_time += server_timer.elapsed();
+					server_timer.reset();
+				}
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
 				comm = io->counter - comm;
 
-				io_time += (end_read - start_read);
-				if(rt == ReadBatchBlock_R){
-					online_io_time += (end_read - start_read);
-				}
 
 				io->send_data(&comm, sizeof(long));
 				io->counter -= sizeof(long);
@@ -573,6 +581,8 @@ void RemoteRing::run_server_disk(string buckets_path){
 				io->recv_data(position.data(), sizeof(int)*num_blocks);
 				io->recv_data(offset.data(), sizeof(int)*num_blocks);
 
+				diskann::Timer server_timer;
+
 				size_t path_len = num_blocks / num_real_blocks;
 
 				// no need for ivs
@@ -584,7 +594,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 
 				auto start_read = std::chrono::high_resolution_clock::now();
 
-				// #pragma omp parallel for num_threads(NUM_THREADS)
+				#pragma omp parallel for num_threads(NUM_THREADS) reduction(+:disk_access_time)
 				for(size_t real_req_id = 0; real_req_id < num_real_blocks; real_req_id++){
 					size_t payload_write_offset = real_req_id * (ctx_block_size - 16);
 					for(int i = 0; i < path_len; i++){
@@ -593,12 +603,26 @@ void RemoteRing::run_server_disk(string buckets_path){
 						size_t block_id = offset[req_id]; 
 
 						string bucket_file_path = get_path_to_bucket(buckets_path, bucket_id);
-						cout << bucket_file_path << "\n";
+						// cout << bucket_file_path << "\n";
 						unsigned char* bucket_data = new unsigned char[bucket_size*ctx_block_size];
+
+						diskann::Timer disk_access_timer;
 						FILE* bucket_file = fopen(bucket_file_path.c_str(), "r");
-						//cout << "bucket found\n";
+
+						if (!bucket_file) {
+							std::cerr << "Failed to open bucket file: " << bucket_file_path << std::endl;
+							perror("fopen");
+							exit(0);
+						}
+
+						// cout << "bucket found\n";
+
+						fflush(bucket_file);
 						size_t bytesRead = fread(bucket_data, 1, bucket_size*ctx_block_size, bucket_file);
-						//cout << "bucket read\n";
+
+						disk_access_time += disk_access_timer.elapsed();
+						disk_access_timer.reset();
+
 						if(bytesRead != bucket_size*ctx_block_size){
 							cout << "Full bucket not read from bucket " << bucket_id << ", read" << bytesRead  << "\n";
 							perror("");
@@ -613,20 +637,21 @@ void RemoteRing::run_server_disk(string buckets_path){
 						for(size_t j = 16; j < ctx_block_size; j++){
 							write_ptr[j - 16] = tmp_data[j] ^ write_ptr[j - 16]; 
 						}
+
+						fclose(bucket_file);
 					}
 					
 				}
 				auto end_read = std::chrono::high_resolution_clock::now();
 
+				online_server_side_time += server_timer.elapsed();
+				server_timer.reset();
 
 				long comm = io->counter;
 				io->send_data(payload, sizeof(unsigned char)*len);
 				io->send_data(ivs, sizeof(unsigned char)*num_blocks*16);
 				comm = io->counter - comm;
 				
-				io_time += (end_read - start_read);
-				online_io_time += (end_read - start_read);
-
 				io->send_data(&comm, sizeof(long));
 				io->counter -= sizeof(long);
 
@@ -634,7 +659,7 @@ void RemoteRing::run_server_disk(string buckets_path){
 					send_hash(position, offset);
 				}
 
-				cout << "ReadBatchBlockXor send to client done" << endl;
+				// cout << "ReadBatchBlockXor send to client done" << endl;
 
 				delete[] payload;
 
@@ -724,14 +749,9 @@ void RemoteRing::run_server_disk(string buckets_path){
 			}
 			case End:{
 				cout << "Remote storage server closing ..." << "\n";
-				// cout << "Client to Server: " << client_to_server*1.0/(1024*1024) << "\n";
-				// cout << "Server to Client: " << server_to_client*1.0/(1024*1024) << "\n";
-				// cout << "Oram: " << oram_comm*1.0/(1024*1024) << "\n";
-				// cout << "Reshuffling: " << reshuffling_comm*1.0/(1024*1024) << "\n";
-				// cout << "Eviction: " << eviction_comm*1.0/(1024*1024) << "\n";
 
-				cout << "IO Time: " << io_time.count() << " seconds \n";
-				cout << "Online IO Time: " << online_io_time.count() << " seconds \n";
+				cout << "Online Server Time: " << online_server_side_time*1.0/1000 << " ms\n";
+				cout << "Disk Access Time: " << disk_access_time*1.0/1000 << " ms\n";
 
 				// close(bucket_file);
 				return;
