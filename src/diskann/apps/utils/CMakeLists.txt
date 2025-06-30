@@ -23,6 +23,8 @@ add_executable(tsv_to_bin tsv_to_bin.cpp)
 
 add_executable(bin_to_tsv bin_to_tsv.cpp)
 
+add_executable(bin_to_fvecs bin_to_fvecs.cpp)
+
 add_executable(int8_to_float int8_to_float.cpp)
 target_link_libraries(int8_to_float ${PROJECT_NAME})
 

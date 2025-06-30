@@ -257,6 +257,8 @@ class OramAPI {
         if (debug) printf("Loading block mapping file\n");
         read_node_to_block_mapping(block_mapping_file.c_str());
         if (debug) printf("Block mapping file successfully loaded\n");
+
+        ((OramRing*) oram)->init_cache_top();
     }
 
     ~OramAPI() {
@@ -295,7 +297,9 @@ class OramAPI {
         for(auto node_id : node_ids){
             int block_id = node_to_block_map[node_id];
             block_ids.push_back(block_id);
+            // cout << "Block ID: " << block_id << " ";
         }
+        // cout << "\n";
         return block_ids;
     }
 

@@ -87,7 +87,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         }
     }
 
-    bool calc_recall_flag = false;
+    bool calc_recall_flag = true;
     if (gt_file != std::string("null") && gt_file != std::string("NULL") && file_exists(gt_file))
     {
         diskann::load_truthset(gt_file, gt_ids, gt_dists, gt_num, gt_dim);
@@ -130,7 +130,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
     node_list.shrink_to_fit();
 
     omp_set_num_threads(num_threads);
-    cout << omp_get_num_threads() << " threads\n\n\n";
+    diskann::cout << omp_get_num_threads() << " threads\n\n\n";
 
     uint64_t warmup_L = 20;
     uint64_t warmup_num = 0, warmup_dim = 0, warmup_aligned_dim = 0;
@@ -256,7 +256,7 @@ int search_disk_index(diskann::Metric &metric, const std::string &index_path_pre
         }
         auto e = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = e - s;
-        cout << "Time: " << diff.count() << "\n";
+        diskann::cout << "Time: " << diff.count() << "\n";
         double qps = (1.0 * query_num) / (1.0 * diff.count());
 
         diskann::convert_types<uint64_t, uint32_t>(query_result_ids_64.data(), query_result_ids[test_id].data(),

@@ -13,6 +13,10 @@
 #include <fstream>
 #include <sys/time.h>
 #include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 // diskann
 // #include "oram_index.h"
@@ -65,50 +69,114 @@ class OramBuilder {
         this->block_fetcher = new FakeBlockFetcherRing<T, LabelT>(num_points, *config, this->random);
     }
 
-
-    void load_graph(const char* graph_path){
-        ifstream infile(graph_path);  // Replace with your filename
-        if (!infile.is_open()) {
-            cerr << "could not open file " << graph_path << endl;
-            perror("");
+    void load_graph(const char* graph_path) {
+        int fd = open(graph_path, O_RDONLY);
+        if (fd == -1) {
+            perror("Failed to open file");
             abort();
         }
 
-        string line;
-        int i = 0; 
-        while (getline(infile, line)) {
-            // if(i < 2700000){
-            //     i++;
-            //     continue;
-            // }
+        // Get file size
+        off_t file_size = lseek(fd, 0, SEEK_END);
+        lseek(fd, 0, SEEK_SET);
 
-            istringstream iss(line);
-
-            string node_id;
-            iss >> node_id;
-            graph[(node_id_t) stoi(node_id)] = vector<node_id_t>(DiskANNNode<T, LabelT>::n_neighbors, -1);
-            
-            string nbr_cnt_s;
-            iss >> nbr_cnt_s;
-            int nbr_cnt = stoi(nbr_cnt_s);
-
-            for(int i = 0; i < nbr_cnt; i++){
-                string nbr_id;
-                iss >> nbr_id;
-                graph[stoi(node_id)][i] = ((node_id_t) stoi(nbr_id));
-            }
-
-            if(stoi(node_id) % 100000 == 0){
-                cout << "-> Done loading graph till node " << node_id << endl;
-            }
-            // if(i == 2800000){
-            //     break;
-            // }
-            i++;
+        char* data = static_cast<char*>(mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0));
+        if (data == MAP_FAILED) {
+            perror("mmap failed");
+            close(fd);
+            abort();
         }
 
-        infile.close();
+        // Find line offsets
+        std::vector<size_t> line_starts;
+        line_starts.push_back(0);
+        for (size_t i = 0; i < file_size; ++i) {
+            if (data[i] == '\n') {
+                if (i + 1 < file_size)
+                    line_starts.push_back(i + 1);
+            }
+        }
+
+        graph.clear();
+
+        // Parallel parse each line
+        #pragma omp parallel for schedule(dynamic)
+        for (size_t i = 0; i < line_starts.size(); ++i) {
+            const char* line = &data[line_starts[i]];
+            const char* end = (i + 1 < line_starts.size()) ? &data[line_starts[i + 1] - 1] : &data[file_size];
+
+            std::string_view line_view(line, end - line);
+
+            std::istringstream iss{std::string(line_view)};
+            int node_id, nbr_cnt;
+            iss >> node_id >> nbr_cnt;
+
+            std::vector<node_id_t> neighbors(DiskANNNode<T, LabelT>::n_neighbors, -1);
+            for (int j = 0; j < nbr_cnt && j < neighbors.size(); ++j) {
+                int nbr_id;
+                iss >> nbr_id;
+                neighbors[j] = nbr_id;
+            }
+
+            #pragma omp critical
+            {
+                graph[node_id] = std::move(neighbors);
+            }
+
+            if (node_id % 100000 == 0) {
+                #pragma omp critical
+                std::cout << "-> Done loading graph till node " << node_id << std::endl;
+            }
+        }
+
+        munmap(data, file_size);
+        close(fd);
     }
+
+
+    // void load_graph(const char* graph_path){
+    //     ifstream infile(graph_path);  // Replace with your filename
+    //     if (!infile.is_open()) {
+    //         cerr << "could not open file " << graph_path << endl;
+    //         perror("");
+    //         abort();
+    //     }
+
+    //     string line;
+    //     int i = 0; 
+    //     while (getline(infile, line)) {
+    //         // if(i < 60000000){
+    //         //     i++;
+    //         //     continue;
+    //         // }
+
+    //         istringstream iss(line);
+
+    //         string node_id;
+    //         iss >> node_id;
+    //         graph[(node_id_t) stoi(node_id)] = vector<node_id_t>(DiskANNNode<T, LabelT>::n_neighbors, -1);
+            
+    //         string nbr_cnt_s;
+    //         iss >> nbr_cnt_s;
+    //         int nbr_cnt = stoi(nbr_cnt_s);
+
+    //         for(int i = 0; i < nbr_cnt; i++){
+    //             string nbr_id;
+    //             iss >> nbr_id;
+    //             graph[stoi(node_id)][i] = ((node_id_t) stoi(nbr_id));
+    //         }
+
+    //         if(stoi(node_id) % 100000 == 0){
+    //             cout << "-> Done loading graph till node " << node_id << endl;
+    //         }
+    //         // if(i == 70000000){
+    //         //     break;
+    //         // }
+    //         i++;
+    //     }
+
+    //     infile.close();
+    // }
 
     void load_index(const char* index_file_path){
         // wait for Sandhya
@@ -141,7 +209,7 @@ class OramBuilder {
 
             // cout << "Hello5\n";
 
-            if(oram_node->get_id() == 8124){
+            if(oram_node->get_id() == 65610822){
                 oram_node->print_node_info();
             }
             // cout << "Hello6\n";
@@ -184,7 +252,7 @@ class OramBuilder {
         block_ids.resize(config->num_buckets * config->bucket_size);
 
         cout << "-> Encrypting ORAM Tree..." << endl;
-        #pragma omp parallel for num_threads(NUM_THREADS)
+        #pragma omp parallel for num_threads(96)
         for(int i = 0; i < config->num_buckets; i++){
             // fill in the real blocks
             for(int j = 0; j < config->real_bucket_size; j++){

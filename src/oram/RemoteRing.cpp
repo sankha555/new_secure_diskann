@@ -94,7 +94,7 @@ void RemoteRing::close_server(){
 	io->send_data(&rt, sizeof(int));
 }
 
-
+/*
 void RemoteRing::load_server_state(const char* fname){
 	int fd = open(fname, O_RDONLY);
     if (fd == -1) {
@@ -177,7 +177,7 @@ void RemoteRing::load_server_state(const char* fname){
 
 		cout << "total_read: " << total_read << endl;
 
-		assert(total_read == target_size);
+		// assert(total_read == target_size);
 
         // for (size_t i = 0; i < capacity*bucket_size; i++){
         //     read(fd, this->buckets[i]->data, SBucket::getCipherSize());
@@ -197,6 +197,73 @@ void RemoteRing::load_server_state(const char* fname){
         // buckets_fname = (char *)malloc(strlen(fname) + 1);
 	    // strcpy(buckets_fname, fname);
     }
+    close(fd);
+}
+*/
+
+void RemoteRing::load_server_state(const char* fname) {
+    int fd = open(fname, O_RDONLY);
+    if (fd == -1) {
+        perror("Error opening file");
+        exit(EXIT_FAILURE);
+    }
+
+    // Read header: capacity, ctx_block_size, integrity flag
+    int file_capacity, sb_size;
+    bool file_integrity;
+
+    if (read(fd, &file_capacity, sizeof(int)) != sizeof(int) ||
+        read(fd, &sb_size, sizeof(int)) != sizeof(int) ||
+        read(fd, &file_integrity, sizeof(bool)) != sizeof(bool)) {
+        perror("Error reading file header");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (file_capacity != capacity || sb_size != ctx_block_size) {
+        std::cerr << "Incompatible file format.\n";
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Calculate mmap size: skip 2 ints + 1 bool
+    size_t offset = sizeof(int) * 2 + sizeof(bool);
+    size_t mmap_size = offset + capacity * bucket_size * ctx_block_size;
+
+    // Memory-map the file for fast access
+    void* mmap_ptr = mmap(nullptr, mmap_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mmap_ptr == MAP_FAILED) {
+        perror("mmap failed");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Tell the kernel we’ll access sequentially (performance hint)
+    if (madvise(mmap_ptr, mmap_size, MADV_SEQUENTIAL) != 0) {
+        perror("madvise failed");
+        munmap(mmap_ptr, mmap_size);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (in_memory) {
+        // Copy data into in-memory buffer
+        unsigned char* mmap_payload = static_cast<unsigned char*>(mmap_ptr) + offset;
+
+        #pragma omp parallel for num_threads(96)
+        for (size_t i = 0; i < capacity * bucket_size; ++i) {
+            memcpy(data + i * ctx_block_size,
+                   mmap_payload + i * ctx_block_size,
+                   ctx_block_size);
+        }
+
+        std::cout << "Successfully loaded " << capacity * bucket_size << " blocks.\n";
+    } else {
+        std::cerr << "Only in-memory mode is supported.\n";
+        assert(0);
+    }
+
+    munmap(mmap_ptr, mmap_size);
     close(fd);
 }
 
@@ -261,8 +328,6 @@ void RemoteRing::load_server_hash(const char* fname){
 
 	return;
 }
-
-
 
 void RemoteRing::run_server_memory(){
 	while(1) {
@@ -344,6 +409,7 @@ void RemoteRing::run_server_memory(){
 				size_t num_real_blocks;
 				io->recv_data(&num_blocks, sizeof(size_t));
 				io->recv_data(&num_real_blocks, sizeof(size_t));
+				// cout << "Num real blocks: " << num_real_blocks << "\n";
 
 				std::vector<int> position(num_blocks);
 				std::vector<int> offset(num_blocks);
@@ -366,7 +432,7 @@ void RemoteRing::run_server_memory(){
 					size_t bucket_offset = block_id * (ctx_block_size - 16);
 					for(int i = 0; i < path_len; i++){
 						size_t bucket_id = block_id * path_len + i;
-						size_t bucket_pos = position[bucket_id]*bucket_size + offset[bucket_id]; 
+						size_t bucket_pos = position[bucket_id]*bucket_size + offset[bucket_id];
 
 						unsigned char* ptr = payload + bucket_offset;
 						unsigned char* tmp_data = data + bucket_pos*ctx_block_size;
@@ -385,6 +451,7 @@ void RemoteRing::run_server_memory(){
 				online_server_side_time += (std::chrono::steady_clock::now() - lts);
 
 				long comm = io->counter;
+
 				io->send_data(payload, sizeof(unsigned char)*len);
 				io->send_data(ivs, sizeof(unsigned char)*num_blocks*16);
 				comm = io->counter - comm;
@@ -395,6 +462,27 @@ void RemoteRing::run_server_memory(){
 				if(integrity){
 					send_hash(position, offset);
 				}
+
+				// {
+				// 	std::ofstream payload_out("payload_dump.bin", std::ios::binary);
+				// 	if (payload_out.is_open()) {
+				// 		payload_out.write(reinterpret_cast<char*>(payload), len);
+				// 		payload_out.close();
+				// 	} else {
+				// 		std::cerr << "Failed to open payload_dump.bin for writing.\n";
+				// 	}
+				// }
+
+				// // Output IVs to a binary file
+				// {
+				// 	std::ofstream ivs_out("ivs_dump.bin", std::ios::binary);
+				// 	if (ivs_out.is_open()) {
+				// 		ivs_out.write(reinterpret_cast<char*>(ivs), num_blocks * 16);
+				// 		ivs_out.close();
+				// 	} else {
+				// 		std::cerr << "Failed to open ivs_dump.bin for writing.\n";
+				// 	}
+				// }
 
 				delete[] payload;
 

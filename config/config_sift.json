@@ -1,0 +1,40 @@
+{
+    "sift": {
+        "debug": false,
+        "integrity": false,
+        "base_size": 1000000,
+        "dummy_size": 64,
+        "real_bucket_size": 32,
+        "evict_rate": 36,
+        "num_levels": 16,
+        "oram_cached_levels": 4,
+        "block_size": 258,
+        "large_number": 1,
+        "use_oram": true,
+
+        "buckets_path": "oram_data/sift/R128_L100_PQ32/buckets.bin",
+        "graph_cache_path": "oram_data/sift/R128_L100_PQ32/graph_cache.bin",
+        "hash_path": "oram_data/sift/R128_L100_PQ32/hash.bin",
+        "metadata_path": "oram_data/sift/R128_L100_PQ32/metadata.bin",
+        "pos_map_path": "oram_data/sift/R128_L100_PQ32/position_map.bin",
+        "block_map_path": "oram_data/sift/R128_L100_PQ32/block_mapping.bin",
+
+        "--data_type": "float",
+        "--dist_fn": "l2",
+        "dim": 128,
+        "M": 128,
+        "-W": 28,
+        "-K": 10,
+        "-L": 100,
+        "--search_io_limit": 5,
+        "--num_nodes_to_cache": 0,
+        "--query_nums": 50,
+
+        "--index_path_prefix": "/home/t-sankhadas/sandhya/new_secure_diskann/data/index/sift/disk_index_sift_base_R128_L100_A1.2",
+        "base_path": "/home/t-sankhadas/sandhya/new_secure_diskann/data/datasets/sift/base.fvecs",
+        "--query_file": "/home/t-sankhadas/sandhya/new_secure_diskann/data/datasets/sift/sift_query.fbin",
+        "--gt_file": "/home/t-sankhadas/sandhya/new_secure_diskann/data/datasets/sift/sift_query_base_gt_100",
+        "--result_path": "results/sift"
+    }
+}
+ 

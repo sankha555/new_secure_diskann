@@ -1991,6 +1991,12 @@ void OramIndex<T, LabelT>::cached_beam_search(const T *query1, const uint64_t k_
                 uint64_t nnbrs = (uint64_t)(*node_buf);
                 uint32_t *node_nbrs = (node_buf + 1);
 
+                // cout << "Node ID: " << fnhood.first << " (" << nnbrs << ")" << "\n";
+                // for(int i = 0; i < nnbrs; i++){
+                //     cout << node_nbrs[i] << " ";
+                // }
+                // cout << "\n";
+
                 //uint32_t* neighbors = (uint32_t*)(sector_buf + sizeof(uint32_t));
 
                 // Get current node's hop count
@@ -2269,9 +2275,12 @@ void OramIndex<T, LabelT>::oram_read(
 
     ((RemoteRing*) ((OramRing*) oram->oram)->storage)->current_query_stats = stats;
 
+    // frontier_nhoods[0] = {5, frontier_nhoods[0].second};
+
     vector<node_id_t> node_ids;
     for (auto &node : frontier_nhoods) {
         node_ids.push_back((node_id_t)node.first);
+        // node_ids.push_back(5);
     }
     
     // stats->local_compute_time += (std::chrono::steady_clock::now() - lts);
@@ -2284,8 +2293,13 @@ void OramIndex<T, LabelT>::oram_read(
     map<node_id_t, DiskANNNode<T, LabelT>*> node_map;
     for (auto &node : fetched_nodes) {
         node_id_t node_id = node->get_id();
+        
+        // node->print_node_info();
+        // sleep(10);
+
         node_map[node_id] = node;
     }
+    // cout << "\n";
 
     for(int i = 0; i < frontier_nhoods.size(); i++){
         node_id_t node_id = frontier_nhoods[i].first;

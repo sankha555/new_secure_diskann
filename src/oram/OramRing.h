@@ -112,7 +112,9 @@ public:
                 }
 
                 leaves.push_back(oldLeaf);
+                // cout << oldLeaf << " ";
             }
+            // cout << "\n";
 
             for(int i = leaves.size(); i < pad_l; i++){
                 int newLeaf = rand_gen->getRandomLeafWithBound(num_leaves);

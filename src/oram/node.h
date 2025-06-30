@@ -926,6 +926,7 @@ class FakeBlockFetcherRing : public BlockFetcher<T, LabelT>{
     
     void save_position_map(const char* fname){
         int s = graph_position_map.size();
+        cout << s << "\n";
         FILE* f = fopen(fname, "w");
         if (!f) {
             fprintf(stderr, "could not open %s\n", fname);

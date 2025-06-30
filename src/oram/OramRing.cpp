@@ -168,7 +168,7 @@ void OramRing::init_cache_top(){
     vector<int> offsets;
     vector<bool> valids;
     vector<int> num_non_dummies;
-    int total_non_dummies;
+    int total_non_dummies = 0;
     for(int pos = 0; pos < num_cached_bucket; pos++){
         int non_dummies = 0;
         for(int i = 0; i < bucket_size; i++){
